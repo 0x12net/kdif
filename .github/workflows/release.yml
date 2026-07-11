@@ -1,0 +1,29 @@
+name: "Release"
+
+# Build the .deb and attach it to the GitHub release for the pushed tag.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  Release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PRJ_VERSION: ${{ github.ref_name }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v7
+
+      - name: Building the .deb package
+        run: make deb VERSION="${PRJ_VERSION#v}"    # v1.2.3 -> 1.2.3
+
+      - name: List package contents
+        run: dpkg-deb -I *.deb && dpkg-deb -c *.deb
+
+      - name: Publishing to GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: "*.deb"

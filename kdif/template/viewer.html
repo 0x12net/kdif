@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KiCad Diff</title>
+<script>
+/* set the theme before first paint: a saved manual choice wins, otherwise
+   follow the browser's prefers-color-scheme (default dark) */
+(function () {
+  try {
+    var saved = localStorage.getItem("khd-theme");
+    var light = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+    document.documentElement.dataset.theme = saved || (light ? "light" : "dark");
+  } catch (e) { document.documentElement.dataset.theme = "dark"; }
+})();
+</script>
+<style>
+:root {
+  --bg: #22262a; --panel: #2b3136; --panel2: #262b30; --border: #3d444b;
+  --fg: #d9dce0; --fg-dim: #9aa1a8; --accent: #3f8cff; --accent-fg: #fff;
+  --canvas-bg: #0f1214; --dot: #ffb020;
+  --red: #ff4136; --green: #2ecc40; --both: #ffe14d;
+}
+:root[data-theme="light"] {
+  --bg: #eceff1; --panel: #ffffff; --panel2: #f4f6f7; --border: #cfd6db;
+  --fg: #24292e; --fg-dim: #6a737d; --accent: #2f7de1; --accent-fg: #fff;
+  --canvas-bg: #14171a; --dot: #e08e00;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 13px/1.45 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg); color: var(--fg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+button { font: inherit; color: inherit; }
+
+/* ---------------- top bar ---------------- */
+#topbar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  flex: 0 0 auto; flex-wrap: wrap;
+}
+#topbar .title { font-weight: 600; font-size: 14px; white-space: nowrap; }
+#topbar .subtitle { color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28ch; }
+#topbar .spacer { flex: 1; }
+.btn {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
+  padding: 4px 10px; cursor: pointer; user-select: none; white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn-group { display: flex; }
+.btn-group .btn { border-radius: 0; margin-left: -1px; }
+.btn-group .btn:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+.btn-group .btn:last-child { border-radius: 0 5px 5px 0; }
+#fadebox { display: none; align-items: center; gap: 6px; }
+#fadebox input { width: 130px; accent-color: var(--accent); }
+.pair-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--panel2);
+  max-width: 22ch; overflow: hidden;
+}
+.pair-chip .sw { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
+.pair-chip span.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------------- main split ---------------- */
+#main { display: flex; flex: 1 1 auto; min-height: 0; }
+#sidebar {
+  width: 292px; flex: 0 0 auto; background: var(--panel);
+  border-right: 1px solid var(--border); display: flex; flex-direction: column;
+  min-height: 0; overflow: hidden;
+}
+body.nosidebar #sidebar { display: none; }
+.side-h {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--fg-dim); padding: 8px 10px 4px; display: flex; align-items: center; gap: 6px;
+}
+.side-h .tools { margin-left: auto; display: flex; gap: 4px; }
+.side-h .mini {
+  font-size: 11px; padding: 1px 7px; border: 1px solid var(--border);
+  background: var(--panel2); border-radius: 4px; cursor: pointer; text-transform: none;
+  letter-spacing: 0; color: var(--fg);
+}
+.side-h .mini:hover { border-color: var(--accent); }
+
+#revlist { overflow-y: auto; flex: 0 1 auto; max-height: 45%; padding: 0 4px 6px; }
+.rev-head, .rev-row {
+  display: grid; grid-template-columns: 26px 26px 1fr auto; align-items: center;
+  gap: 4px; padding: 2px 6px; border-radius: 4px;
+}
+.rev-head { color: var(--fg-dim); font-size: 11px; text-align: center; }
+.rev-head .cA { color: var(--red); font-weight: 700; }
+.rev-head .cB { color: var(--green); font-weight: 700; }
+.rev-row:hover { background: var(--panel2); }
+.rev-row input { justify-self: center; accent-color: var(--accent); cursor: pointer; margin: 0; }
+.rev-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+.rev-row .nm b { font-weight: 600; }
+.rev-row .dt { color: var(--fg-dim); font-size: 11px; }
+
+#layerlist, #sheetlist { overflow-y: auto; flex: 1 1 auto; padding: 0 4px 8px; }
+#sheetlist { flex: 0 1 auto; max-height: 34%; }
+body.schonly #sheetlist { flex: 1 1 auto; max-height: none; }
+.layer-row {
+  display: flex; align-items: center; gap: 7px; padding: 2px 8px; border-radius: 4px;
+  cursor: pointer; user-select: none;
+}
+.layer-row:hover { background: var(--panel2); }
+.layer-row.selected { background: rgba(63,140,255,.16); box-shadow: inset 2px 0 0 var(--accent); }
+.layer-row.selected .nm { font-weight: 600; }
+.layer-row input { accent-color: var(--accent); margin: 0; flex: 0 0 auto; }
+.layer-row .sw { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; border: 1px solid rgba(128,128,128,.35); }
+.layer-row .nm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-row .chg { color: var(--dot); font-size: 15px; line-height: 1; visibility: hidden; }
+.layer-row.changed .chg { visibility: visible; }
+
+#sideinfo {
+  flex: 0 0 auto; border-top: 1px solid var(--border); padding: 6px 10px;
+  color: var(--fg-dim); font-size: 11px; line-height: 1.5;
+}
+#sideinfo .tb-title { color: var(--fg); font-weight: 600; font-size: 12px; }
+#sideinfo .tb-row { margin-top: 1px; }
+#sideinfo .tb-k { color: var(--fg-dim); }
+#sideinfo .tb-v { color: var(--fg); }
+#sideinfo .tb-arrow { color: var(--fg-dim); padding: 0 2px; }
+#sideinfo .tb-old { color: var(--red); }
+#sideinfo .tb-new { color: var(--green); }
+#sideinfo .gen { display: block; margin-top: 5px; opacity: .8; }
+
+/* ---------------- canvas area ---------------- */
+#viewport { flex: 1 1 auto; display: flex; min-width: 0; position: relative; background: var(--canvas-bg); }
+.pane { position: relative; flex: 1 1 50%; min-width: 0; display: none; }
+.pane.on { display: block; }
+.pane canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.pane canvas.panning { cursor: grabbing; }
+.pane .pane-label {
+  position: absolute; top: 8px; left: 8px; z-index: 2; pointer-events: none;
+  background: rgba(0,0,0,.55); color: #eee; padding: 2px 9px; border-radius: 4px; font-size: 12px;
+}
+.pane .pane-label .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+#paneB { border-left: 1px solid var(--border); }
+#loading {
+  position: absolute; top: 8px; right: 8px; z-index: 3; display: none;
+  background: rgba(0,0,0,.6); color: #ffd479; padding: 3px 10px; border-radius: 4px; font-size: 12px;
+}
+#fatal {
+  position: absolute; inset: 0; z-index: 10; display: none; place-content: center;
+  background: var(--canvas-bg); color: #ff8080; padding: 30px; text-align: center; font-size: 14px;
+}
+
+/* ---------------- status bar ---------------- */
+#statusbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 16px; padding: 3px 10px;
+  background: var(--panel); border-top: 1px solid var(--border);
+  color: var(--fg-dim); font-size: 12px; flex-wrap: wrap;
+}
+#legend { display: none; align-items: center; gap: 10px; }
+#legend .chip { display: inline-flex; align-items: center; gap: 4px; }
+#legend .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+#coords { min-width: 19ch; font-variant-numeric: tabular-nums; }
+#zoomlvl { margin-left: auto; font-variant-numeric: tabular-nums; }
+kbd {
+  background: var(--panel2); border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 3px; padding: 0 4px; font-size: 11px;
+}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <button class="btn" id="btn-sidebar" title="Toggle sidebar">&#9776;</button>
+  <span class="title" id="t-title"></span>
+  <span class="subtitle" id="t-sub"></span>
+  <span class="pair-chip" title=""><span class="sw" style="background:var(--red)"></span><span class="nm" id="chip-a"></span></span>
+  <button class="btn" id="btn-swap" title="Swap A and B (S)">&#8645;</button>
+  <span class="pair-chip" title=""><span class="sw" style="background:var(--green)"></span><span class="nm" id="chip-b"></span></span>
+  <span class="spacer"></span>
+  <span class="btn-group" id="modes">
+    <button class="btn" data-mode="diff"  title="Red/green overlay diff (1)">Diff</button>
+    <button class="btn" data-mode="fade"  title="Crossfade A/B (2)">Fade</button>
+    <button class="btn" data-mode="a"     title="Show revision A only (3)">A</button>
+    <button class="btn" data-mode="b"     title="Show revision B only (4)">B</button>
+    <button class="btn" data-mode="sxs"   title="Side by side (5)">Split</button>
+  </span>
+  <span id="fadebox">A <input type="range" id="fade" min="0" max="100" value="50"> B</span>
+  <button class="btn" id="btn-fit" title="Fit board to view (F)">Fit</button>
+  <button class="btn" id="btn-png" title="Save current view as PNG">PNG</button>
+  <button class="btn" id="btn-theme" title="Toggle light/dark theme">&#9681;</button>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div class="side-h">Revisions
+      <span class="tools"><button class="mini" id="btn-adjacent" title="Select two neighbouring revisions">A&#8594;B</button></span>
+    </div>
+    <div id="revlist"></div>
+    <div class="side-h" id="layers-h">Layers
+      <span class="tools">
+        <button class="mini" id="btn-l-all">All</button>
+        <button class="mini" id="btn-l-none">None</button>
+        <button class="mini" id="btn-l-chg" title="Show only layers that differ between A and B">Changed</button>
+      </span>
+    </div>
+    <div id="layerlist"></div>
+    <div class="side-h" id="sheets-h">Sheets</div>
+    <div id="sheetlist"></div>
+    <div id="sideinfo"></div>
+  </div>
+
+  <div id="viewport">
+    <div class="pane on" id="paneA"><div class="pane-label" id="labelA"></div><canvas id="cA"></canvas></div>
+    <div class="pane" id="paneB"><div class="pane-label" id="labelB"></div><canvas id="cB"></canvas></div>
+    <div id="loading">loading&hellip;</div>
+    <div id="fatal"></div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span id="coords"></span>
+  <span id="legend">
+    <span class="chip"><span class="sw" style="background:var(--red)"></span>only in A</span>
+    <span class="chip"><span class="sw" style="background:var(--green)"></span>only in B</span>
+    <span class="chip"><span class="sw" style="background:var(--both)"></span>unchanged</span>
+  </span>
+  <span>drag: pan &middot; wheel: zoom &middot; <kbd>F</kbd> fit &middot; <kbd>1</kbd>&ndash;<kbd>5</kbd> mode &middot; <kbd>S</kbd> swap &middot; click layer: board, to front &middot; click sheet: schematic &middot; dbl-click: solo</span>
+  <span id="zoomlvl"></span>
+</div>
+
+<script>
+"use strict";
+const DATA = "__KHD_DATA__";
+
+(function () {
+const fatal = (msg) => {
+  const el = document.getElementById("fatal");
+  el.textContent = msg; el.style.display = "grid";
+};
+if (typeof DATA === "string") { fatal("Template was not populated with data."); return; }
+if (DATA.compressed && typeof DecompressionStream === "undefined") {
+  fatal("This browser lacks DecompressionStream. Regenerate the file with --no-compress or use a newer browser.");
+  return;
+}
+
+/* ---------------- state ---------------- */
+const PCB = DATA.pcb || null;   /* {layers, svgs}  | null */
+const SCH = DATA.sch || null;   /* {sheets, svgs}  | null */
+const NREV = DATA.revs.length;
+const NLAY = PCB ? PCB.layers.length : 0;
+const NSH = SCH ? SCH.sheets.length : 0;
+const S = {
+  doc: PCB ? "pcb" : "sch",
+  sheet: 0,              /* current schematic page */
+  a: Math.max(0, NREV - 2),
+  b: NREV - 1,
+  mode: "diff",
+  fade: 0.5,
+  layersOn: PCB ? PCB.layers.map((l) => l.name === "F.Cu" || l.display === "F.Cu") : [],
+  sel: -1,               /* highlighted layer: drawn on top of everything */
+  view: { k: 1, x: 0, y: 0 },
+  fitK: 1,
+  fitted: false,
+};
+if (PCB && !S.layersOn.some(Boolean)) {
+  const cu = PCB.layers.findIndex((l) => /\.Cu$/.test(l.name));
+  S.layersOn = PCB.layers.map((_, i) => cu < 0 || i === cu);
+}
+/* pan/zoom of the doc that is not on screen, restored when switching back */
+const otherView = { k: 1, x: 0, y: 0, fitK: 1, fitted: false };
+const RED = "#ff4136", GREEN = "#2ecc40";
+const INK = "#d9dce0";  /* schematic ink in single-revision modes (canvas is dark in both themes) */
+const $ = (id) => document.getElementById(id);
+
+/* ---------------- data access ---------------- */
+function b64bytes(s) {
+  const bin = atob(s), arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+async function svgText(entry) {
+  const bytes = b64bytes(entry.d);
+  if (!DATA.compressed) return new TextDecoder().decode(bytes);
+  const ds = new DecompressionStream("deflate-raw");
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  return await new Response(stream).text();
+}
+const pcbEntry = (r, l) => (PCB ? (PCB.svgs[r] || [])[l] : null) || null;
+const schEntry = (r, s) => (SCH ? (SCH.svgs[r] || [])[s] : null) || null;
+const entryFor = (doc, r, i) => (doc === "pcb" ? pcbEntry(r, i) : schEntry(r, i));
+
+const imgPromise = new Map(), imgReady = new Map();
+function getImage(doc, r, i) {
+  const key = doc + ":" + r + ":" + i;
+  if (!imgPromise.has(key)) {
+    imgPromise.set(key, (async () => {
+      const entry = entryFor(doc, r, i);
+      if (!entry) return null;
+      const text = await svgText(entry);
+      const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+      const img = await new Promise((res) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => res(null);
+        im.src = url;
+      });
+      return img;
+    })().then((v) => { imgReady.set(key, v); scheduleRender(); return v; }));
+  }
+  return imgPromise.get(key);
+}
+function peekImage(doc, r, i) { getImage(doc, r, i); return imgReady.get(doc + ":" + r + ":" + i); }
+
+/* Rasterized-bitmap cache for schematic pages: re-rasterizing a dense vector
+   page (with its luminance filter) on every frame is far too slow, so each
+   page is drawn once into an offscreen canvas and redrawn from that bitmap.
+   The vector image is only used again when zoomed in past the bitmap's
+   resolution (full render happens once, at idle). */
+const bmpCache = new Map();               /* "rev:sheet" -> {canvas, scale, img} */
+function schBitmap(rev, sheet, img, e) {
+  const key = rev + ":" + sheet;
+  let b = bmpCache.get(key);
+  if (b && b.img === img) return b;
+  const MAXPIX = 8.6e6;
+  /* rasterize at the pixel budget, NOT the SVG's intrinsic size: an SVG image
+     is vector, so drawImage rasterizes it crisply at any target size — clamping
+     to naturalWidth would needlessly cap the page to ~96-dpi and blur it. */
+  const scale = Math.sqrt(MAXPIX / (e.vb[2] * e.vb[3]));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(e.vb[2] * scale));
+  c.height = Math.max(1, Math.round(e.vb[3] * scale));
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  b = { canvas: c, scale: c.width / e.vb[2], img };
+  bmpCache.set(key, b);
+  if (bmpCache.size > 6) {                /* keep memory bounded */
+    for (const k of bmpCache.keys()) {
+      if (k !== key) { bmpCache.delete(k); break; }
+    }
+  }
+  return b;
+}
+
+/* mm per svg user unit (kicad-cli may plot in sub-mm units) */
+function docMMU(src) {
+  if (src) for (const rev of src.svgs) for (const e of rev) if (e && e.u) return e.u;
+  return 1;
+}
+const MMU_PCB = docMMU(PCB), MMU_SCH = docMMU(SCH);
+const MMU = () => (S.doc === "pcb" ? MMU_PCB : MMU_SCH);
+
+/* ---------------- geometry / fit ---------------- */
+function vbRect(r) {
+  if (S.doc === "sch") {
+    const e = schEntry(r, S.sheet) || schEntry(r === S.a ? S.b : S.a, S.sheet);
+    if (e) return { x: e.vb[0], y: e.vb[1], w: e.vb[2], h: e.vb[3] };
+    return { x: 0, y: 0, w: 100, h: 100 };
+  }
+  for (let l = 0; l < NLAY; l++) {
+    const e = pcbEntry(r, l);
+    if (e) return { x: e.vb[0], y: e.vb[1], w: e.vb[2], h: e.vb[3] };
+  }
+  return { x: 0, y: 0, w: 100, h: 100 };
+}
+const bboxCache = new Map();
+async function contentBBox(r) {
+  if (S.doc === "sch") return vbRect(r);      /* fit the whole page */
+  if (bboxCache.has(r)) return bboxCache.get(r);
+  const full = vbRect(r);
+  let box = full;
+  let edge = PCB.layers.findIndex((l) => l.name === "Edge.Cuts" || l.display === "Edge.Cuts");
+  const img = edge >= 0 ? await getImage("pcb", r, edge) : null;
+  const e = edge >= 0 ? pcbEntry(r, edge) : null;
+  if (img && e) {
+    const W = 640, H = Math.max(8, Math.round(W * e.vb[3] / e.vb[2]));
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const x = c.getContext("2d", { willReadFrequently: true });
+    x.drawImage(img, 0, 0, W, H);
+    const d = x.getImageData(0, 0, W, H).data;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let py = 0; py < H; py++)
+      for (let px = 0; px < W; px++)
+        if (d[(py * W + px) * 4 + 3] > 8) {
+          if (px < x0) x0 = px; if (px > x1) x1 = px;
+          if (py < y0) y0 = py; if (py > y1) y1 = py;
+        }
+    if (x1 >= 0) {
+      const sx = e.vb[2] / W, sy = e.vb[3] / H;
+      box = { x: e.vb[0] + x0 * sx, y: e.vb[1] + y0 * sy, w: (x1 - x0 + 1) * sx, h: (y1 - y0 + 1) * sy };
+      const padW = box.w * 0.04 + 2 / MMU_PCB, padH = box.h * 0.04 + 2 / MMU_PCB;
+      box = { x: box.x - padW, y: box.y - padH, w: box.w + 2 * padW, h: box.h + 2 * padH };
+    }
+  }
+  bboxCache.set(r, box);
+  return box;
+}
+function unionRect(p, q) {
+  const x = Math.min(p.x, q.x), y = Math.min(p.y, q.y);
+  return { x, y, w: Math.max(p.x + p.w, q.x + q.w) - x, h: Math.max(p.y + p.h, q.y + q.h) - y };
+}
+async function fitView() {
+  const rect = unionRect(await contentBBox(S.a), await contentBBox(S.b));
+  const pane = $("paneA");
+  const cw = pane.clientWidth, ch = pane.clientHeight;
+  if (!cw || !ch || !rect.w || !rect.h) return;
+  const k = Math.min(cw / rect.w, ch / rect.h) * 0.96;
+  S.view.k = k; S.fitK = k;
+  S.view.x = (cw - rect.w * k) / 2 - rect.x * k;
+  S.view.y = (ch - rect.h * k) / 2 - rect.y * k;
+  scheduleRender();
+}
+
+/* ---------------- rendering ---------------- */
+const scratchL = document.createElement("canvas");   /* one colorized layer */
+const scratchS = document.createElement("canvas");   /* one revision stack  */
+let pending = false;
+
+function layerAlpha(name) {
+  if (/\.Mask$/.test(name)) return 0.62;
+  if (/\.Paste$/.test(name)) return 0.78;
+  if (/\.(Fab|CrtYd)$|Courtyard/.test(name)) return 0.72;
+  return 1;
+}
+/* Fully colorized revision stacks are cached in *document space* on two tiers:
+
+     1. a whole-sheet BASE canvas covering the entire page at a resolution
+        bounded by a pixel budget.  It always spans the full sheet, so panning
+        any distance — and fade / mode / A-B switches — is a pure blit; it is
+        only rebuilt when the layers/sheet selection changes or the zoom rises
+        enough to warrant a crisper base.
+     2. a SHARP overlay covering just the viewport at the true zoom, drawn on
+        top only when zoomed in past the base's resolution.  It is (re)built at
+        idle, so deep-zoom panning stays smooth on the (slightly soft) base and
+        sharpens a moment after the gesture stops.                           */
+const pageCache = new Map();    /* "rev|color" -> {base, dKey, k, x, y, w, h, canvas, complete} */
+const sharpCache = new Map();   /* "rev|color" -> {base, dKey, k, x, y, w, h, canvas, complete} */
+const MAXDIM = 16384;           /* max canvas side (browser limit) */
+let curVW = 1, curVH = 1;       /* current pane size, device px */
+
+function stackBase(rev, forceColor) {
+  const state = S.doc === "sch" ? "s" + S.sheet
+    : "l" + S.layersOn.map((b) => (b ? 1 : 0)).join("") + ":" + S.sel;
+  return [S.doc, rev, forceColor || "", state].join("|");
+}
+function docRect() { return unionRect(vbRect(S.a), vbRect(S.b)); }
+function docKey(D) { return S.doc + "," + D.x + "," + D.y + "," + D.w + "," + D.h; }
+function fitScale(w, h, budget) {
+  return Math.min(Math.sqrt(budget / (w * h)), MAXDIM / w, MAXDIM / h);
+}
+
+/* draw the stack for `rev` into scratchS covering world rect `t` {x,y,w,h} at
+   device scale `t.k`; `useVector` picks vector (crisp) over the page bitmap for
+   the schematic.  Returns true when no source image was still loading. */
+function paintStack(t, rev, forceColor, useVector) {
+  const cw = Math.max(1, Math.min(MAXDIM, Math.round(t.w * t.k)));
+  const ch = Math.max(1, Math.min(MAXDIM, Math.round(t.h * t.k)));
+  if (scratchL.width !== cw || scratchL.height !== ch) { scratchL.width = cw; scratchL.height = ch; }
+  if (scratchS.width !== cw || scratchS.height !== ch) { scratchS.width = cw; scratchS.height = ch; }
+  const sl = scratchL.getContext("2d"), ss = scratchS.getContext("2d");
+  const sx = cw / t.w, sy = ch / t.h;      /* actual device scale after clamping */
+  ss.setTransform(1, 0, 0, 1, 0, 0);
+  ss.clearRect(0, 0, cw, ch);
+  let complete = true;
+  const paint = (e, img, color, layerA) => {   /* colorize one source into the stack */
+    sl.setTransform(1, 0, 0, 1, 0, 0);
+    sl.clearRect(0, 0, cw, ch);
+    sl.setTransform(sx, 0, 0, sy, -t.x * sx, -t.y * sy);
+    sl.drawImage(img, e.vb[0], e.vb[1], e.vb[2], e.vb[3]);
+    sl.setTransform(1, 0, 0, 1, 0, 0);
+    sl.globalCompositeOperation = "source-in";
+    sl.fillStyle = color;
+    sl.fillRect(0, 0, cw, ch);
+    sl.globalCompositeOperation = "source-over";
+    ss.globalAlpha = layerA;
+    ss.drawImage(scratchL, 0, 0);
+  };
+  if (S.doc === "sch") {
+    const e = schEntry(rev, S.sheet);           /* page may be absent in this revision */
+    if (e) {
+      const img = peekImage("sch", rev, S.sheet);
+      if (img === undefined) { pending = true; complete = false; }
+      else if (img) paint(e, useVector ? img : schBitmap(rev, S.sheet, img, e).canvas,
+                          forceColor || INK, 1);
+    }
+  } else {
+    const drawLayer = (l) => {
+      const e = pcbEntry(rev, l);
+      if (!e) return;
+      const img = peekImage("pcb", rev, l);
+      if (img === undefined) { pending = true; complete = false; return; }
+      if (img === null) return;
+      paint(e, img, forceColor || PCB.layers[l].color,
+            forceColor ? 1 : layerAlpha(PCB.layers[l].name));
+    };
+    for (let l = NLAY - 1; l >= 0; l--) {          /* bottom of stack first */
+      if (!S.layersOn[l] || l === S.sel) continue;
+      drawLayer(l);
+    }
+    if (S.sel >= 0 && S.layersOn[S.sel]) drawLayer(S.sel);  /* highlighted on top */
+  }
+  ss.globalAlpha = 1;
+  return complete;
+}
+function storeStack(c) {   /* copy scratchS into a cache entry's canvas */
+  if (!c.canvas) c.canvas = document.createElement("canvas");
+  c.canvas.width = scratchS.width; c.canvas.height = scratchS.height;
+  c.canvas.getContext("2d").drawImage(scratchS, 0, 0);
+}
+function blitDoc(ctx, c) {   /* draw a doc-space canvas {k,x,y,w,h,canvas} at the current view */
+  const dpr = window.devicePixelRatio || 1, k = S.view.k * dpr;
+  const ox = S.view.x * dpr + c.x * k, oy = S.view.y * dpr + c.y * k;
+  const scale = k / c.k;
+  /* when the cache is at native resolution (the common pan-without-zoom case)
+     blit 1:1 at an integer offset — pixel-aligned and crisp, no per-frame
+     resampling; only genuinely scaled (stale mid-zoom) blits resample. */
+  if (Math.abs(scale - 1) < 0.003) ctx.drawImage(c.canvas, Math.round(ox), Math.round(oy));
+  else ctx.drawImage(c.canvas, ox, oy, c.canvas.width * scale, c.canvas.height * scale);
+}
+
+/* whole-sheet base at a bounded resolution */
+function ensurePageStack(rev, forceColor) {
+  const key = rev + "|" + (forceColor || ""), base = stackBase(rev, forceColor);
+  const D = docRect(), dKey = docKey(D), dpr = window.devicePixelRatio || 1;
+  const budget = S.doc === "sch" ? 8.6e6 : 12e6;   /* device px; sch source is the page bitmap */
+  const targetK = Math.min(S.view.k * dpr, fitScale(D.w, D.h, budget));
+  let pc = pageCache.get(key);
+  const usable = pc && pc.base === base && pc.dKey === dKey;
+  if (usable && pc.k >= targetK * 0.999 && pc.complete) return pc;
+  if (usable && interacting) return pc;            /* never rebuild mid-gesture; blit stale */
+  const complete = paintStack({ k: targetK, x: D.x, y: D.y, w: D.w, h: D.h }, rev, forceColor, false);
+  if (!pc) { pc = {}; pageCache.set(key, pc); }
+  pc.base = base; pc.dKey = dKey; pc.x = D.x; pc.y = D.y; pc.w = D.w; pc.h = D.h;
+  pc.k = scratchS.width / D.w; pc.complete = complete;
+  storeStack(pc);
+  if (pageCache.size > 4) { for (const k of pageCache.keys()) if (k !== key) { pageCache.delete(k); break; } }
+  return pc;
+}
+
+/* crisp overlay for the viewport at deep zoom.  Geometry: the viewport plus a
+   small margin, clamped to the page. */
+function sharpGeom() {
+  const D = docRect(), dpr = window.devicePixelRatio || 1, k = S.view.k * dpr;
+  const vx = -S.view.x / S.view.k, vy = -S.view.y / S.view.k;
+  const vw = curVW / k, vh = curVH / k, pad = 0.25;
+  const x0 = Math.max(vx - vw * pad, D.x), y0 = Math.max(vy - vh * pad, D.y);
+  const x1 = Math.min(vx + vw * (1 + pad), D.x + D.w), y1 = Math.min(vy + vh * (1 + pad), D.y + D.h);
+  return { D, dKey: docKey(D), k, vx, vy, vw, vh, x0, y0, w: Math.max(x1 - x0, 1e-3), h: Math.max(y1 - y0, 1e-3) };
+}
+function sharpHit(rev, forceColor) {   /* cached overlay that already covers the view, or null */
+  const sc = sharpCache.get(rev + "|" + (forceColor || ""));
+  if (!sc) return null;
+  const g = sharpGeom();
+  const ok = sc.base === stackBase(rev, forceColor) && sc.dKey === g.dKey && sc.k >= g.k * 0.999 && sc.complete &&
+    Math.max(g.vx, g.D.x) >= sc.x - 1e-9 && Math.max(g.vy, g.D.y) >= sc.y - 1e-9 &&
+    Math.min(g.vx + g.vw, g.D.x + g.D.w) <= sc.x + sc.w + 1e-9 &&
+    Math.min(g.vy + g.vh, g.D.y + g.D.h) <= sc.y + sc.h + 1e-9;
+  return ok ? sc : null;
+}
+function sharpBuild(rev, forceColor) {
+  const key = rev + "|" + (forceColor || ""), g = sharpGeom();
+  /* Budget the overlay by *total* raster work: cost grows with the number of
+     sources drawn (a PCB re-rasterizes every visible layer's filtered SVG),
+     so divide the pixel budget by that count.  A 1-source schematic keeps a
+     high useK (crisp + cheap); a 24-layer board is capped so its rebuild stays
+     ~tens of ms instead of stalling for a second at deep zoom. */
+  const nsrc = S.doc === "sch" ? 1 : Math.max(1, S.layersOn.reduce((n, b) => n + (b ? 1 : 0), 0));
+  const useK = Math.min(g.k, fitScale(g.w, g.h, (S.doc === "sch" ? 12e6 : 6e6) / nsrc));
+  const complete = paintStack({ k: useK, x: g.x0, y: g.y0, w: g.w, h: g.h }, rev, forceColor, true);
+  let sc = sharpCache.get(key);
+  if (!sc) { sc = {}; sharpCache.set(key, sc); }
+  sc.base = stackBase(rev, forceColor); sc.dKey = g.dKey;
+  sc.x = g.x0; sc.y = g.y0; sc.w = g.w; sc.h = g.h;
+  sc.k = scratchS.width / g.w; sc.complete = complete;
+  storeStack(sc);
+  if (sharpCache.size > 4) { for (const kk of sharpCache.keys()) if (kk !== key) { sharpCache.delete(kk); break; } }
+  return sc;
+}
+
+/* Building a PCB overlay re-rasterizes every layer's filtered SVG and can block
+   for 100+ ms.  Never do it on the frame that ends a gesture: show the (soft)
+   base immediately and build the overlay a moment later, only once the view has
+   truly settled — so rapid flicks stay smooth and only a real pause sharpens. */
+let buildSharpNow = false, sharpTimer = 0;
+function requestSharpen() {
+  if (sharpTimer) return;
+  sharpTimer = setTimeout(() => {
+    sharpTimer = 0;
+    if (interacting) return;            /* still moving; the next settled render re-requests */
+    buildSharpNow = true;
+    try { render(); } finally { buildSharpNow = false; }
+  }, 60);
+}
+
+function drawStack(ctx, rev, forceColor, alpha, blend) {
+  const dpr = window.devicePixelRatio || 1, k = S.view.k * dpr;
+  ctx.globalAlpha = alpha;
+  ctx.globalCompositeOperation = blend;
+  const pc = ensurePageStack(rev, forceColor);
+  /* Draw exactly one canvas per stack (blend/alpha must not composite twice).
+     The sharp overlay already covers every bit of content visible in the
+     viewport (its window is the viewport clamped to the page, and nothing
+     lives outside the page), so at deep zoom it fully replaces the soft base. */
+  if (!interacting && k > pc.k * 1.15) {
+    const hit = sharpHit(rev, forceColor);
+    if (hit) blitDoc(ctx, hit);                    /* overlay still covers the view: crisp */
+    /* the schematic overlay is one cheap SVG — build it on the settling frame;
+       a multi-layer board overlay is expensive, so defer it (see requestSharpen) */
+    else if (buildSharpNow || S.doc === "sch") blitDoc(ctx, sharpBuild(rev, forceColor));
+    else { blitDoc(ctx, pc); requestSharpen(); }   /* show base now, sharpen after a pause */
+  } else blitDoc(ctx, pc);                          /* whole sheet — always covers the view */
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+}
+
+/* While panning/zooming only the whole-sheet base is blitted (cheap); the
+   sharp overlay / crisper base is rebuilt once, shortly after the gesture stops. */
+let interacting = false, interactTimer = 0;
+function markInteract() {
+  interacting = true;
+  clearTimeout(interactTimer);
+  interactTimer = setTimeout(() => { interacting = false; scheduleRender(); }, 150);
+}
+function renderCanvas(cv, stacks) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(cv.clientWidth * dpr));
+  const H = Math.max(1, Math.round(cv.clientHeight * dpr));
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  curVW = W; curVH = H;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--canvas-bg") || "#101315";
+  ctx.fillRect(0, 0, W, H);
+  /* Only when a gesture is upscaling the base past its resolution (deep zoom)
+     do we drop to nearest-neighbour blits — much cheaper on a big/HiDPI
+     viewport, and the blockiness is hidden by motion.  At fit / moderate zoom
+     the base is near native, so keep it smooth and crisp. */
+  const D = docRect();
+  const baseCap = fitScale(D.w, D.h, S.doc === "sch" ? 8.6e6 : 12e6);
+  ctx.imageSmoothingEnabled = !(interacting && S.view.k * dpr > baseCap * 1.15);
+  for (const st of stacks) drawStack(ctx, st.rev, st.color, st.alpha, st.blend);
+}
+function render() {
+  const sxs = S.mode === "sxs";
+  $("paneB").classList.toggle("on", sxs);
+  $("labelA").style.display = sxs ? "" : "none";
+  pending = false;
+  if (S.mode === "diff") {
+    renderCanvas($("cA"), [
+      { rev: S.a, color: RED, alpha: 1, blend: "lighter" },
+      { rev: S.b, color: GREEN, alpha: 1, blend: "lighter" },
+    ]);
+  } else if (S.mode === "fade") {
+    renderCanvas($("cA"), [
+      { rev: S.a, color: null, alpha: 1 - S.fade, blend: "source-over" },
+      { rev: S.b, color: null, alpha: S.fade, blend: "source-over" },
+    ]);
+  } else if (S.mode === "a" || S.mode === "b") {
+    renderCanvas($("cA"), [{ rev: S.mode === "a" ? S.a : S.b, color: null, alpha: 1, blend: "source-over" }]);
+  } else { /* sxs */
+    renderCanvas($("cA"), [{ rev: S.a, color: null, alpha: 1, blend: "source-over" }]);
+    renderCanvas($("cB"), [{ rev: S.b, color: null, alpha: 1, blend: "source-over" }]);
+  }
+  $("loading").style.display = pending ? "" : "none";
+  $("zoomlvl").textContent = "zoom " + Math.round(100 * S.view.k / S.fitK) + "%";
+}
+let rafId = 0;
+function scheduleRender() {
+  if (rafId) return;
+  rafId = requestAnimationFrame(() => { rafId = 0; render(); });
+}
+
+/* ---------------- interaction ---------------- */
+function setupPanZoom(cv) {
+  const pointers = new Map();
+  let pinchD = 0;
+  cv.addEventListener("pointerdown", (e) => {
+    cv.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      const [p, q] = [...pointers.values()];
+      pinchD = Math.hypot(p.x - q.x, p.y - q.y);
+    }
+    cv.classList.add("panning");
+  });
+  cv.addEventListener("pointermove", (e) => {
+    const rect = cv.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    updateCoords(mx, my);
+    if (!pointers.has(e.pointerId)) return;
+    const prev = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) {
+      markInteract();
+      S.view.x += e.clientX - prev.x;
+      S.view.y += e.clientY - prev.y;
+      scheduleRender();
+    } else if (pointers.size === 2) {
+      const [p, q] = [...pointers.values()];
+      const d = Math.hypot(p.x - q.x, p.y - q.y);
+      if (pinchD > 0) zoomAt((p.x + q.x) / 2 - rect.left, (p.y + q.y) / 2 - rect.top, d / pinchD);
+      pinchD = d;
+    }
+  });
+  const up = (e) => {
+    pointers.delete(e.pointerId);
+    if (!pointers.size) cv.classList.remove("panning");
+  };
+  cv.addEventListener("pointerup", up);
+  cv.addEventListener("pointercancel", up);
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const rect = cv.getBoundingClientRect();
+    zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.pow(1.0016, -e.deltaY));
+  }, { passive: false });
+  cv.addEventListener("dblclick", () => fitView());
+}
+function zoomAt(mx, my, factor) {
+  markInteract();
+  const k2 = Math.min(Math.max(S.view.k * factor, S.fitK * 0.05), S.fitK * 400);
+  factor = k2 / S.view.k;
+  S.view.x = mx - (mx - S.view.x) * factor;
+  S.view.y = my - (my - S.view.y) * factor;
+  S.view.k = k2;
+  scheduleRender();
+}
+function updateCoords(mx, my) {
+  const dx = (mx - S.view.x) / S.view.k * MMU();
+  const dy = (my - S.view.y) / S.view.k * MMU();
+  $("coords").textContent = "x " + dx.toFixed(2) + "  y " + dy.toFixed(2) + " mm";
+}
+setupPanZoom($("cA"));
+setupPanZoom($("cB"));
+new ResizeObserver(() => scheduleRender()).observe($("paneA"));
+
+/* ---------------- UI wiring ---------------- */
+function revLabel(r) {
+  const rv = DATA.revs[r];
+  return rv.worktree ? "worktree" : rv.name;
+}
+function revTitle(r) {
+  const rv = DATA.revs[r];
+  return rv.worktree ? "uncommitted working tree"
+    : rv.short + " " + rv.date + " " + rv.author + "\n" + rv.subject;
+}
+function buildRevList() {
+  const host = $("revlist");
+  host.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "rev-head";
+  head.innerHTML = '<span class="cA">A</span><span class="cB">B</span><span></span><span></span>';
+  host.appendChild(head);
+  /* newest first in the list; DATA.revs itself stays oldest -> newest */
+  for (let i = NREV - 1; i >= 0; i--) {
+    const rv = DATA.revs[i];
+    const row = document.createElement("div");
+    row.className = "rev-row";
+    row.dataset.rev = i;
+    row.title = revTitle(i);
+    const ra = document.createElement("input");
+    ra.type = "radio"; ra.name = "revA"; ra.checked = i === S.a;
+    ra.addEventListener("change", () => { S.a = i; pairChanged(); });
+    const rb = document.createElement("input");
+    rb.type = "radio"; rb.name = "revB"; rb.checked = i === S.b;
+    rb.addEventListener("change", () => { S.b = i; pairChanged(); });
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.innerHTML = "<b></b> <span style='color:var(--fg-dim)'></span>";
+    nm.children[0].textContent = revLabel(i);
+    nm.children[1].textContent = rv.subject;
+    const dt = document.createElement("span");
+    dt.className = "dt"; dt.textContent = rv.date;
+    row.append(ra, rb, nm, dt);
+    host.appendChild(row);
+  }
+}
+function layerChanged(l) {
+  const ea = pcbEntry(S.a, l), eb = pcbEntry(S.b, l);
+  if (!ea && !eb) return false;
+  if (!ea || !eb) return true;
+  return ea.h !== eb.h;
+}
+function sheetChanged(s) {
+  const ea = schEntry(S.a, s), eb = schEntry(S.b, s);
+  if (!ea && !eb) return false;
+  if (!ea || !eb) return true;   /* page added or removed */
+  return ea.h !== eb.h;
+}
+function buildLayerList() {
+  const host = $("layerlist");
+  host.innerHTML = "";
+  PCB.layers.forEach((ly, i) => {
+    const row = document.createElement("div");
+    row.className = "layer-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.checked = S.layersOn[i];
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("dblclick", (e) => e.stopPropagation());
+    cb.addEventListener("change", () => { setDoc("pcb"); S.layersOn[i] = cb.checked; scheduleRender(); });
+    const sw = document.createElement("span");
+    sw.className = "sw"; sw.style.background = ly.color;
+    const nm = document.createElement("span");
+    nm.className = "nm"; nm.textContent = ly.display;
+    const chg = document.createElement("span");
+    chg.className = "chg"; chg.textContent = "●"; chg.title = "differs between A and B";
+    row.append(cb, sw, nm, chg);
+    row.addEventListener("click", () => {          /* select only: never touches the checkbox */
+      const wasPcb = S.doc === "pcb";
+      setDoc("pcb");
+      if (wasPcb) S.sel = S.sel === i ? -1 : i;    /* coming from the schematic just shows the board */
+      else S.sel = i;
+      refreshSelection();
+      scheduleRender();
+    });
+    row.addEventListener("dblclick", () => {
+      setDoc("pcb");
+      const solo = S.layersOn.filter(Boolean).length === 1 && S.layersOn[i];
+      S.sel = i;
+      refreshSelection();
+      setLayers(solo ? () => true : (j) => j === i);
+    });
+    host.appendChild(row);
+  });
+  refreshChangedDots();
+}
+function sheetDepth(sh) {
+  return sh.display === "Root" ? 0 : sh.display.split(" / ").length;
+}
+function buildSheetList() {
+  const host = $("sheetlist");
+  host.innerHTML = "";
+  SCH.sheets.forEach((sh, i) => {
+    const row = document.createElement("div");
+    row.className = "layer-row";
+    row.style.paddingLeft = (8 + sheetDepth(sh) * 13) + "px";
+    row.title = sh.display;
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    const parts = sh.display.split(" / ");
+    nm.textContent = parts[parts.length - 1];
+    const chg = document.createElement("span");
+    chg.className = "chg"; chg.textContent = "●"; chg.title = "differs between A and B";
+    row.append(nm, chg);
+    row.addEventListener("click", () => { setDoc("sch"); setSheet(i); });
+    host.appendChild(row);
+  });
+  refreshSheetSel();
+  refreshChangedDots();
+}
+function setSheet(i) {
+  if (i < 0 || i >= NSH) return;
+  S.sheet = i;
+  refreshSheetSel();
+  getImage("sch", S.a, i);
+  getImage("sch", S.b, i);
+  fitView();                     /* pages are independent documents */
+}
+function refreshSheetSel() {
+  /* a sheet is highlighted only while the schematic is on screen */
+  [...$("sheetlist").children].forEach((row, i) =>
+    row.classList.toggle("selected", S.doc === "sch" && i === S.sheet));
+}
+function refreshChangedDots() {
+  if (PCB) [...$("layerlist").children].forEach((row, i) =>
+    row.classList.toggle("changed", layerChanged(i)));
+  if (SCH) [...$("sheetlist").children].forEach((row, i) =>
+    row.classList.toggle("changed", sheetChanged(i)));
+}
+function refreshSelection() {
+  [...$("layerlist").children].forEach((row, i) =>
+    row.classList.toggle("selected", i === S.sel));
+}
+function setLayers(pred) {
+  S.layersOn = PCB.layers.map((_, i) => !!pred(i));
+  [...$("layerlist").children].forEach((row, i) => { row.querySelector("input").checked = S.layersOn[i]; });
+  scheduleRender();
+}
+function syncRevRadios() {
+  [...$("revlist").querySelectorAll(".rev-row")].forEach((row) => {
+    const i = Number(row.dataset.rev);
+    row.children[0].checked = i === S.a;
+    row.children[1].checked = i === S.b;
+  });
+}
+const esc = (s) => String(s).replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* one title-block field: a plain value, or "old -> new" when it changed A->B */
+function tbField(a, b) {
+  a = a || ""; b = b || "";
+  if (!a && !b) return "";
+  if (!a || !b || a === b) return '<span class="tb-v">' + esc(a || b) + "</span>";
+  return '<span class="tb-old">' + esc(a) + '</span><span class="tb-arrow">→</span>'
+       + '<span class="tb-new">' + esc(b) + "</span>";
+}
+
+/* Info block: the current document's KiCad title block (board and schematic
+   carry their own), diffing changed fields between revisions A and B, with the
+   generation/version line underneath. */
+function renderSideInfo() {
+  const src = S.doc === "pcb" ? PCB : SCH;
+  const tbs = (src && src.titleBlocks) || [];
+  const a = tbs[S.a] || {}, b = tbs[S.b] || {};
+  let html = "";
+  const title = tbField(a.title, b.title);
+  if (title) html += '<div class="tb-title">' + title + "</div>";
+  const parts = [];
+  const rev = tbField(a.rev, b.rev);
+  if (rev) parts.push('<span class="tb-k">rev</span> ' + rev);
+  const date = tbField(a.date, b.date);
+  if (date) parts.push(date);
+  const company = tbField(a.company, b.company);
+  if (company) parts.push(company);
+  const comments = tbField((a.comments || []).join(", "), (b.comments || []).join(", "));
+  if (comments) parts.push(comments);
+  if (parts.length) html += '<div class="tb-row">' + parts.join(" · ") + "</div>";
+  html += '<span class="gen">generated ' + esc(DATA.generated)
+        + (DATA.kicadVersion ? " · KiCad " + esc(DATA.kicadVersion) : "")
+        + " · " + NREV + " revisions</span>";
+  $("sideinfo").innerHTML = html;
+}
+function pairChanged() {
+  $("chip-a").textContent = revLabel(S.a);
+  $("chip-b").textContent = revLabel(S.b);
+  $("chip-a").parentElement.title = revTitle(S.a);
+  $("chip-b").parentElement.title = revTitle(S.b);
+  $("labelA").innerHTML = '<span class="sw" style="background:var(--red)"></span>A: ';
+  $("labelA").append(revLabel(S.a));
+  $("labelB").innerHTML = '<span class="sw" style="background:var(--green)"></span>B: ';
+  $("labelB").append(revLabel(S.b));
+  syncRevRadios();
+  refreshChangedDots();
+  renderSideInfo();
+  if (S.doc === "pcb") {
+    for (let l = 0; l < NLAY; l++) { getImage("pcb", S.a, l); getImage("pcb", S.b, l); }
+  } else {
+    getImage("sch", S.a, S.sheet); getImage("sch", S.b, S.sheet);
+  }
+  scheduleRender();
+}
+function setDoc(d) {
+  if (S.doc === d || (d === "pcb" && !PCB) || (d === "sch" && !SCH)) return;
+  /* swap the stored pan/zoom with the outgoing document's */
+  const cur = { k: S.view.k, x: S.view.x, y: S.view.y, fitK: S.fitK, fitted: S.fitted };
+  S.view = { k: otherView.k, x: otherView.x, y: otherView.y };
+  S.fitK = otherView.fitK;
+  S.fitted = otherView.fitted;
+  Object.assign(otherView, cur);
+  S.doc = d;
+  refreshSheetSel();
+  pairChanged();
+  if (!S.fitted) fitView().then(() => { S.fitted = true; });
+}
+function setMode(m) {
+  S.mode = m;
+  [...$("modes").children].forEach((b) => b.classList.toggle("active", b.dataset.mode === m));
+  $("fadebox").style.display = m === "fade" ? "inline-flex" : "none";
+  $("legend").style.display = m === "diff" ? "inline-flex" : "none";
+  scheduleRender();
+}
+$("modes").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mode]");
+  if (b) setMode(b.dataset.mode);
+});
+$("fade").addEventListener("input", (e) => { S.fade = e.target.value / 100; scheduleRender(); });
+$("btn-swap").addEventListener("click", () => { [S.a, S.b] = [S.b, S.a]; pairChanged(); });
+$("btn-adjacent").addEventListener("click", () => {
+  if (S.b > 0) { S.a = S.b - 1; } else { S.b = S.a + 1 <= NREV - 1 ? S.a + 1 : NREV - 1; }
+  pairChanged();
+});
+$("btn-fit").addEventListener("click", () => fitView());
+$("btn-sidebar").addEventListener("click", () => {
+  document.body.classList.toggle("nosidebar");
+  scheduleRender();
+});
+$("btn-theme").addEventListener("click", () => {
+  const root = document.documentElement;
+  root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem("khd-theme", root.dataset.theme); } catch (e) {}
+  scheduleRender();
+});
+$("btn-l-all").addEventListener("click", () => { setDoc("pcb"); setLayers(() => true); });
+$("btn-l-none").addEventListener("click", () => { setDoc("pcb"); setLayers(() => false); });
+$("btn-l-chg").addEventListener("click", () => { setDoc("pcb"); setLayers((i) => layerChanged(i)); });
+$("btn-png").addEventListener("click", () => {
+  const sxs = S.mode === "sxs";
+  const a = $("cA"), b = $("cB");
+  const out = document.createElement("canvas");
+  out.width = a.width + (sxs ? b.width : 0);
+  out.height = a.height;
+  const ctx = out.getContext("2d");
+  ctx.drawImage(a, 0, 0);
+  if (sxs) ctx.drawImage(b, a.width, 0);
+  out.toBlob((blob) => {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    const sheetTag = S.doc === "sch"
+      ? "-" + SCH.sheets[S.sheet].display.replace(/[^\w.-]+/g, "_") : "";
+    link.download = DATA.title + sheetTag + "-" + revLabel(S.a) + "-vs-" + revLabel(S.b) + ".png";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+  });
+});
+window.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" && e.target.type !== "radio" && e.target.type !== "checkbox") return;
+  const modes = { "1": "diff", "2": "fade", "3": "a", "4": "b", "5": "sxs" };
+  if (modes[e.key]) setMode(modes[e.key]);
+  else if (e.key === "f" || e.key === "F") fitView();
+  else if (e.key === "s" || e.key === "S") { [S.a, S.b] = [S.b, S.a]; pairChanged(); }
+});
+
+/* ---------------- boot ---------------- */
+/* theme was applied pre-paint in <head>; keep following the system setting for
+   as long as the user has not made a manual choice (no saved override) */
+try {
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", (e) => {
+    if (localStorage.getItem("khd-theme")) return;
+    document.documentElement.dataset.theme = e.matches ? "light" : "dark";
+    scheduleRender();
+  });
+} catch (e) {}
+document.title = DATA.title + " — KiCad diff";
+$("t-title").textContent = DATA.title;
+$("t-sub").textContent = DATA.repo + " / " + DATA.board;
+if (!PCB && !SCH) { fatal("No documents in this file."); return; }
+if (!PCB) {
+  $("layers-h").style.display = "none";
+  $("layerlist").style.display = "none";
+  document.body.classList.add("schonly");
+}
+if (!SCH) {
+  $("sheets-h").style.display = "none";
+  $("sheetlist").style.display = "none";
+}
+buildRevList();
+if (PCB) buildLayerList();
+if (SCH) buildSheetList();
+setMode("diff");
+pairChanged();
+fitView().then(() => { S.fitted = true; });
+})();
+</script>
+</body>
+</html>

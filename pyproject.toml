@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kdif"
+version = "0.1.0"
+description = "Generate an interactive HTML diff viewer for KiCad PCBs and schematics from git history (uses kicad-cli, not a KiCad plugin)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "MuratovAS", email = "muratovas@0x12.net" }]
+classifiers = [
+    "Environment :: Console",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Programming Language :: Python :: 3",
+]
+
+[project.scripts]
+kdif = "kdif.cli:main"
+
+[tool.setuptools]
+packages = ["kdif"]
+
+[tool.setuptools.package-data]
+kdif = ["template/*.html"]

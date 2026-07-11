@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""Console entry point installed by the Debian package.
+
+Mirrors the ``kdif`` console_script from pyproject.toml so the .deb ships a
+plain executable in /usr/bin without depending on pip-generated wrappers.
+"""
+from kdif.cli import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

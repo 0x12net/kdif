@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging / build
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# Editable install / setuptools
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test / coverage / type-checker caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Tool output (generated diff viewers)
+*-diff.html
+
+# Debian packaging output
+*.deb
+/fixture/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store

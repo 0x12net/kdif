@@ -1,0 +1,35 @@
+name: "Build & Smoke Test"
+
+# Build the .deb from source and exercise the CLI, both bare and installed.
+on:
+  push:
+    branches: 
+      - main
+  pull_request:
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v7
+
+      - name: Smoke-test the CLI
+        run: |
+          python3 -m kdif --version
+          python3 -m kdif --help
+
+      - name: Generate the test fixture
+        run: python3 tests/make_fixture.py "$RUNNER_TEMP/fixture"
+
+      - name: Building the .deb package
+        run: make deb
+
+      - name: List package contents
+        run: dpkg-deb -I *.deb && dpkg-deb -c *.deb
+
+      - name: Installing and running the .deb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ./*.deb
+          kdif --version
