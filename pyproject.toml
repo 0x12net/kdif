@@ -4,7 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kdif"
-version = "0.1.0"
+# Not written down twice: the version lives in kdif/__init__.py, where the
+# release workflows stamp the git tag into it (packaging/set_version.py).
+dynamic = ["version"]
 description = "Generate an interactive HTML diff viewer for KiCad PCBs and schematics from git history (drives kicad-cli; also ships as a KiCad PCM plugin)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -21,6 +23,9 @@ kdif = "kdif.cli:main"
 
 [tool.setuptools]
 packages = ["kdif"]
+
+[tool.setuptools.dynamic]
+version = { attr = "kdif.__version__" }
 
 [tool.setuptools.package-data]
 kdif = ["template/*.html"]

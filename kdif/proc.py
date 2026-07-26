@@ -13,7 +13,9 @@ keeping in one place instead of spreading `sys.platform` checks around:
   with the locale encoding, which on a non-English Windows is a legacy
   codepage (cp1251, cp932, ...). KiCad files, kicad-cli output and git output
   are UTF-8 regardless of locale, so every read in kdif goes through
-  :func:`run`/:func:`read_text` here, which pin UTF-8 explicitly.
+  :func:`run`/:func:`read_text` here, which pin UTF-8 explicitly. The same
+  applies in the other direction, to what kdif itself prints -
+  :func:`use_utf8_io`.
 * **Cache location.** ``~/.cache`` is a Linux convention; macOS and Windows
   have their own. All three candidates stay inside ``$HOME``, which flatpak
   KiCad requires to be able to read the temporary files at all (see
@@ -52,6 +54,23 @@ def run(argv: Sequence[str], *, binary: bool = False,
             result.args, result.returncode, result.stdout,
             result.stderr.decode("utf-8", errors="replace"))
     return result
+
+
+def use_utf8_io() -> None:
+    """Pin this process's own stdout/stderr to UTF-8.
+
+    Python only uses UTF-8 for a Windows *console*; as soon as the output is a
+    pipe (the KiCad panel's log box, a CI step, ``kdif ... | tee``) it falls
+    back to the locale codepage, and cp1252/cp1251 cannot encode a Cyrillic or
+    CJK project path - the progress line raises UnicodeEncodeError and takes
+    the whole run down with it. Where UTF-8 is already the default this is a
+    no-op.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass  # already redirected to something that is not a text stream
 
 
 def read_text(path: Path) -> str:

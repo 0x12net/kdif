@@ -25,6 +25,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FAKE_CLI = REPO_ROOT / "tests" / "fake_kicad_cli.py"
 
 
+def utf8_stdio() -> None:
+    """The test echoes the non-ASCII fixture paths it runs; CI captures stdout
+    to a pipe, where Python encodes with the locale codepage (cp1252 on the
+    Windows runner). Done here rather than through PYTHONIOENCODING on the
+    children on purpose: the child processes have to survive this by
+    themselves, which is what kdif's proc.use_utf8_io() is for."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def run(argv, **kwargs) -> subprocess.CompletedProcess:
     print("$ " + " ".join(str(a) for a in argv))
     result = subprocess.run([str(a) for a in argv], capture_output=True,
@@ -43,6 +56,7 @@ def check(condition: bool, what: str) -> None:
 
 
 def main() -> int:
+    utf8_stdio()
     with tempfile.TemporaryDirectory() as tmp:
         # Non-ASCII on purpose - see the module docstring.
         workdir = Path(tmp) / "проект"

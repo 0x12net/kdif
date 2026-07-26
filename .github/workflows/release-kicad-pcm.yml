@@ -34,6 +34,13 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v7
 
+      # The archive bundles kdif/ as source files, so the version the plugin
+      # panel and `kdif --version` report inside it is whatever this stamps
+      # into kdif/__init__.py before the copy (the repository carries a 0.0.0
+      # placeholder). The metadata.json version comes from the tag below.
+      - name: Stamping the release version
+        run: python3 packaging/set_version.py "${{ github.ref_name }}"
+
       - name: Building the PCM archive
         id: archive
         # create_pcm_archive.py writes download_sha256/download_size/

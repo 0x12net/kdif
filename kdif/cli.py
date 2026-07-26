@@ -203,6 +203,7 @@ def _sheet_union(trees: List[List[Sheet]]) -> List[Sheet]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    proc.use_utf8_io()   # paths and title blocks are printed; see kdif/proc.py
     args = _parse_args(argv)
     log = (lambda *a: None) if args.quiet else (lambda *a: print(*a, file=sys.stderr))
 

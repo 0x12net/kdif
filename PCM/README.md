@@ -86,6 +86,12 @@ field, whose schema pattern permits digits and dots alone (`v1.2.3` fails
 validation there) — `create_pcm_archive.py`'s `strip_v()` and
 `pcm_repository.py` both do this.
 
+The tag is also the *only* place a release number is written down. `kdif/__init__.py`
+holds a `0.0.0` placeholder in git, and the workflow's first step replaces it
+with the tag (`packaging/set_version.py`) before the archive is built — the
+bundled `kdif/` is a source copy, so that is what `kdif --version` and the
+plugin panel report on the user's machine.
+
 Nothing here is hardcoded to this fork: `GITHUB_REPOSITORY` (set by Actions)
 overrides the `0x12net/kdif` default in both scripts, so a fork publishes its
 own URLs untouched.

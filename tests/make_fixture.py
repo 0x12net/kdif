@@ -195,6 +195,15 @@ def run(cwd, *args):
 
 
 def main():
+    # The path is echoed below and may be non-ASCII (tests/smoke.py builds the
+    # fixture under a Cyrillic directory); a captured stdout would otherwise be
+    # encoded with the locale codepage.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "fixture").resolve()
     if out.exists() and any(out.iterdir()):
         sys.exit(f"error: {out} already exists and is not empty")

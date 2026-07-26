@@ -3,8 +3,12 @@
 # /usr/bin -- no compiler or dh-python needed.
 #
 #   make deb                  # version taken from kdif/__init__.py
-#   make deb VERSION=1.2.3    # override (CI passes the git tag here)
+#   make deb VERSION=1.2.3    # override
 #   make pcm                  # KiCad Plugin and Content Manager archive
+#
+# kdif/__init__.py holds a 0.0.0 placeholder in git; a release is versioned by
+# its tag, which the release workflows write into that file first
+# (packaging/set_version.py), so nothing here needs the tag passed in.
 #
 # `make pcm` is a convenience wrapper only: PCM/create_pcm_archive.py is
 # plain Python precisely so the KiCad package can also be built where make

@@ -14,14 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      PRJ_VERSION: ${{ github.ref_name }}
     steps:
       - name: Check out repository code
         uses: actions/checkout@v7
 
+      # The repository carries a 0.0.0 placeholder; the pushed tag is what this
+      # release is. Everything downstream reads kdif.__version__ - here that is
+      # the Makefile's VERSION default, hence no VERSION= below.
+      - name: Stamping the release version
+        run: python3 packaging/set_version.py "${{ github.ref_name }}"
+
       - name: Building the .deb package
-        run: make deb VERSION="${PRJ_VERSION#v}"    # v1.2.3 -> 1.2.3
+        run: make deb
 
       - name: List package contents
         run: dpkg-deb -I *.deb && dpkg-deb -c *.deb
