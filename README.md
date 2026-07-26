@@ -1,7 +1,7 @@
 # kdif
 
-![](assets/20260711_104615_screenshot.png)
-
+![](assets/image0.png)
+![](assets/image1.png)
 
 Generate an **interactive HTML diff of a KiCad board and schematic** between git
 revisions. A single self-contained HTML file in the spirit of
@@ -15,27 +15,27 @@ Manager** and press a toolbar button instead. Linux, macOS and Windows.
 
 ## Features
 
-- **Comparison modes**: diff overlay (red = only in A, green = only in B,
+* **Comparison modes**: diff overlay (red = only in A, green = only in B,
   yellow = unchanged), a crossfade slider, viewing A/B individually, and
   split-view.
-- **Schematic**: the sidebar lists the sheets next to the layers — clicking a
+* **Schematic**: the sidebar lists the sheets next to the layers — clicking a
   sheet shows the schematic diff, clicking a layer returns to the board.
   **Multi-sheet (hierarchical) schematics** are supported — each sheet is
   compared separately, changed sheets are marked with a dot, and
   added/removed sheets are shown entirely in green/red.
-- **Layers**: toggle each layer on/off, All / None / Changed buttons,
+* **Layers**: toggle each layer on/off, All / None / Changed buttons,
   double-click a layer to solo it. Layers that differ between A and B are
   marked with a dot.
-- **Fab layers stay readable**: footprint value fields are not plotted on
+* **Fab layers stay readable**: footprint value fields are not plotted on
   `F.Fab`/`B.Fab` (a value next to every part, dragged along by every part that
   moved, buries the change you are looking for). Reference designators are
   kept, and `--show-fab-values` brings the values back.
-- **Comparison points**: any number of revisions in one file — the A/B pair is
+* **Comparison points**: any number of revisions in one file — the A/B pair is
   selected with radio buttons right inside the viewer.
-- **Title block**: the bottom of the sidebar shows title / rev / date / company
+* **Title block**: the bottom of the sidebar shows title / rev / date / company
   / comment from the project — separately for the board and the schematic;
   fields that changed between A and B are shown as `old → new`.
-- The HTML itself has no dependencies — attach it to a release or send it to a
+* The HTML itself has no dependencies — attach it to a release or send it to a
   colleague.
 
 ## Installation
@@ -62,14 +62,14 @@ does and [PCM/README.md](PCM/README.md) for how the package is built.
 
 Download the `.deb` from the [latest release](../../releases/latest) and install it:
 
-```bash
+```Shell
 sudo apt install ./kdif_*.deb     # pulls in python3; recommends kicad
 ```
 
 Or install from source (works on Linux, macOS and Windows — kdif needs only
 Python ≥ 3.9, git and KiCad):
 
-```bash
+```Shell
 pipx install /path/to/kdif        # or: pip install -e .
 ```
 
@@ -85,7 +85,7 @@ board and the schematic (whichever exist in the repository) are included in the
 diff. To compare a single document, point directly at a `.kicad_pcb` or
 `.kicad_sch`. The git repository is located from this path.
 
-```bash
+```Shell
 # last two commits (default)
 kdif hardware/main.kicad_pro
 
@@ -112,19 +112,18 @@ The result is `<board_name>-diff.html`, which opens in any modern browser.
 
 ### Main options
 
-
-| Option                     | Description                                                                |
-| -------------------------- | -------------------------------------------------------------------------- |
-| `-r, --ref REF`            | commit/tag/branch; repeatable, comma-separated lists allowed               |
-| `--commits N` / `--tags N` | last N commits / tags                                                      |
-| `--worktree`               | add the uncommitted state as a`worktree` revision                          |
-| `-l, --layers LIST`        | comma-separated layers (default: all board layers)                         |
-| `-o, --output FILE`        | output HTML file                                                           |
-| `--kicad-cli CMD`          | kicad-cli command or path (default: autodetected, see below)               |
-| `-j, --jobs N`             | parallel kicad-cli processes (default: 4)                                  |
-| `--check-zones`            | refill zones before exporting (KiCad ≥ 8)                                 |
-| `--show-fab-values`        | plot footprint values on the`*.Fab` layers (hidden by default)             |
-| `--no-compress`            | do not compress the SVG inside the HTML (for very old browsers)            |
+| Option                     | Description                                                     |
+| -------------------------- | --------------------------------------------------------------- |
+| `-r, --ref REF`            | commit/tag/branch; repeatable, comma-separated lists allowed    |
+| `--commits N` / `--tags N` | last N commits / tags                                           |
+| `--worktree`               | add the uncommitted state as a`worktree` revision               |
+| `-l, --layers LIST`        | comma-separated layers (default: all board layers)              |
+| `-o, --output FILE`        | output HTML file                                                |
+| `--kicad-cli CMD`          | kicad-cli command or path (default: autodetected, see below)    |
+| `-j, --jobs N`             | parallel kicad-cli processes (default: 4)                       |
+| `--check-zones`            | refill zones before exporting (KiCad ≥ 8)                       |
+| `--show-fab-values`        | plot footprint values on the`*.Fab` layers (hidden by default)  |
+| `--no-compress`            | do not compress the SVG inside the HTML (for very old browsers) |
 
 ### Viewer controls
 
@@ -139,7 +138,7 @@ the standard install location for the platform, a flatpak KiCad. Only Linux
 distributions put it on `PATH`, so on the other two the third step is what
 normally finds it:
 
-```bash
+```Shell
 # Windows
 kdif --kicad-cli "C:\Program Files\KiCad\9.0\bin\kicad-cli.exe" hw\board.kicad_pro
 # macOS
@@ -154,11 +153,11 @@ because that is all the flatpak sandbox can see. Override with `--workdir`.
 
 ## Try it on a fixture
 
-[tests/make_fixture.py](tests/make_fixture.py) builds a deterministic KiCad git
+[tests/make\_fixture.py](tests/make_fixture.py) builds a deterministic KiCad git
 repository (a board and a hierarchical schematic across 3 revisions and 2 tags)
 that exercises every diff feature — handy for a quick look or a smoke test:
 
-```bash
+```Shell
 python3 tests/make_fixture.py ~/demo-board
 kdif --commits 3 ~/demo-board/demo.kicad_pro
 ```
@@ -184,3 +183,4 @@ CI runs on Linux, macOS and Windows on every push.
    decompresses them via `DecompressionStream`, colours them by the alpha
    channel into the layer colour, and blends them additively — matching areas
    turn yellow.
+
