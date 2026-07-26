@@ -12,11 +12,12 @@ from typing import List, Optional
 
 from . import __version__
 from . import gitrepo
+from . import proc
 from .gitrepo import GitError, Rev, WORKTREE_REF
 from .exporter import (
-    ExportError, KicadExporter, Sheet, find_kicad_cli, is_flatpak_cmd,
-    kicad_cli_version, match_sheet_svgs, parse_board_layers, parse_sheet_tree,
-    parse_title_block, select_layers,
+    ExportError, KicadExporter, Sheet, find_kicad_cli, hide_fab_values,
+    is_flatpak_cmd, kicad_cli_version, match_sheet_svgs, parse_board_layers,
+    parse_sheet_tree, parse_title_block, select_layers,
 )
 from .htmlgen import build_html
 
@@ -25,8 +26,8 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="kdif",
         description="Generate an interactive single-file HTML diff of a KiCad PCB "
-                    "and schematic between git revisions "
-                    "(uses kicad-cli, not a KiCad plugin).",
+                    "and schematic between git revisions (drives kicad-cli; the same "
+                    "tool is also installable into KiCad through the PCM).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""examples:
   kdif hw/board.kicad_pro                        # last two commits
@@ -59,11 +60,16 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                           "(default: all layers of the board)")
     out.add_argument("--no-compress", action="store_true",
                      help="embed raw SVG instead of deflate (bigger file, works on very old browsers)")
+    out.add_argument("--show-fab-values", action="store_true",
+                     help="plot the footprint value fields on the *.Fab layers "
+                          "(hidden by default: a value next to every part buries "
+                          "the actual change)")
 
     kc = p.add_argument_group("kicad-cli")
     kc.add_argument("--kicad-cli", metavar="CMD",
-                    help="kicad-cli command (default: kicad-cli from PATH); for flatpak KiCad pass "
-                         "'flatpak run --command=kicad-cli org.kicad.KiCad'")
+                    help="kicad-cli command (default: $KICAD_CLI, then PATH, then the "
+                         "standard KiCad install location of this platform); for flatpak "
+                         "KiCad pass 'flatpak run --command=kicad-cli org.kicad.KiCad'")
     kc.add_argument("--page-size-mode", type=int, choices=(0, 1, 2), default=0,
                     help="kicad-cli page sizing mode; 0=full page keeps revisions aligned (default: 0)")
     kc.add_argument("--check-zones", action="store_true",
@@ -72,8 +78,9 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
     misc = p.add_argument_group("misc")
     misc.add_argument("--workdir", metavar="DIR",
-                      help="working directory for temporary files "
-                           "(default: ~/.cache/kdif; must be inside $HOME for flatpak KiCad)")
+                      help="working directory for temporary files (default: the user "
+                           "cache directory of this platform, e.g. ~/.cache/kdif; must "
+                           "be inside $HOME for flatpak KiCad)")
     misc.add_argument("--keep-workdir", action="store_true", help="do not delete temporary files")
     misc.add_argument("-q", "--quiet", action="store_true")
     misc.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -218,12 +225,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             log(f"schematic: {sch_rel}")
 
         # workdir: must live inside $HOME when kicad-cli runs in flatpak sandbox
-        if args.workdir:
-            base = Path(args.workdir).resolve()
-            base.mkdir(parents=True, exist_ok=True)
-        else:
-            base = Path.home() / ".cache" / "kdif"
-            base.mkdir(parents=True, exist_ok=True)
+        base = Path(args.workdir).resolve() if args.workdir else proc.default_workdir()
+        base.mkdir(parents=True, exist_ok=True)
         workdir = Path(tempfile.mkdtemp(prefix="kdif-", dir=base))
         if is_flatpak_cmd(cmd) and Path.home() not in workdir.parents:
             log(f"warning: workdir {workdir} is outside $HOME; "
@@ -261,6 +264,12 @@ def _run(args, log, repo: Path, cmd, major: int, ver: str,
         for i, rev in enumerate(revs):
             dest = workdir / f"rev{i}"
             boards.append(gitrepo.extract_file(repo, rev, pcb_rel, dest))
+        if not args.show_fab_values:
+            # Edits the extracted copies in the work directory only
+            hidden = sum(hide_fab_values(board) for board in boards)
+            if hidden:
+                log(f"hid {hidden} footprint value field(s) on fab layers "
+                    "(--show-fab-values keeps them)")
         # per-revision title block (title/rev/date/company/comments)
         pcb_title_blocks = [parse_title_block(b) for b in boards]
         # layer list comes from the newest revision
@@ -346,7 +355,7 @@ def _run(args, log, repo: Path, cmd, major: int, ver: str,
         compressed=not args.no_compress,
         kicad_version=ver,
     )
-    out_path.write_text(html)
+    proc.write_text(out_path, html)
     log(f"wrote {out_path} ({out_path.stat().st_size / 1024:.0f} KiB)")
     if not args.quiet:
         print(str(out_path))

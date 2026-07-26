@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import subprocess
 import tarfile
 import io
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+from . import proc
 
 WORKTREE_REF = "@worktree"
 
@@ -31,15 +32,10 @@ class Rev:
 
 
 def _git(repo: Path, *args: str, binary: bool = False):
-    proc = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        raise GitError(
-            f"git {' '.join(args)} failed:\n{proc.stderr.decode(errors='replace').strip()}"
-        )
-    return proc.stdout if binary else proc.stdout.decode(errors="replace")
+    result = proc.run(["git", "-C", str(repo), *args], binary=binary)
+    if result.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
+    return result.stdout
 
 
 def repo_root(path: Path) -> Path:
@@ -83,6 +79,44 @@ def last_commits(repo: Path, n: int) -> List[str]:
 
 def commit_timestamp(repo: Path, sha: str) -> int:
     return int(_git(repo, "show", "-s", "--format=%ct", sha).strip())
+
+
+def commit_log(repo: Path, n: int, paths: Optional[List[str]] = None) -> List[Rev]:
+    """Last n commits, newest first, optionally only those touching `paths`.
+
+    One git call for the whole list, unlike resolve_rev() per ref - this feeds
+    the revision picker in the KiCad plugin, which needs the subject line of
+    every candidate commit up front.
+    """
+    args = ["log", "-n", str(n), "--format=%H%x00%h%x00%cI%x00%an%x00%s"]
+    if paths:
+        args += ["--", *paths]
+    revs: List[Rev] = []
+    for line in _git(repo, *args).splitlines():
+        if not line.strip():
+            continue
+        sha, short, date, author, subject = line.split("\x00", 4)
+        revs.append(Rev(name=short, sha=sha, short=short, date=date,
+                        author=author, subject=subject))
+    return revs
+
+
+def tags_by_commit(repo: Path) -> Dict[str, List[str]]:
+    """Commit sha -> tag names pointing at it.
+
+    An annotated tag's own object is the tag, not the commit, so %(*objectname)
+    (the dereferenced target, empty for lightweight tags) is what has to be
+    keyed on when it is set.
+    """
+    out = _git(repo, "for-each-ref", "--sort=creatordate",
+               "--format=%(objectname)%00%(*objectname)%00%(refname:short)", "refs/tags")
+    mapping: Dict[str, List[str]] = {}
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        obj, deref, name = line.split("\x00", 2)
+        mapping.setdefault(deref or obj, []).append(name)
+    return mapping
 
 
 def ls_files(repo: Path, rev: Rev) -> List[str]:

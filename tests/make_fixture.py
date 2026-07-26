@@ -36,6 +36,29 @@ def title_block(rev: int, doc: str) -> str:
             f'  )')
 
 
+def footprint(ref: str, value: str, x: float, y: float, tag: str) -> str:
+    """A 0603-ish SMD part: reference on silkscreen, value on F.Fab.
+
+    That split is the KiCad default, and it is what makes fab-layer diffs noisy
+    (see hide_fab_values() in kdif/exporter.py) - so the fixture has to have it.
+    """
+    return f'''(footprint "Demo:R_0603"
+    (layer "F.Cu")
+    (uuid "{u(tag)}")
+    (at {x} {y})
+    (property "Reference" "{ref}" (at 0 -1.6 0) (layer "F.SilkS") (uuid "{u(tag + "ref")}")
+      (effects (font (size 0.8 0.8) (thickness 0.12))))
+    (property "Value" "{value}" (at 0 1.6 0) (layer "F.Fab") (uuid "{u(tag + "val")}")
+      (effects (font (size 0.8 0.8) (thickness 0.12))))
+    (fp_rect (start -0.8 -0.45) (end 0.8 0.45)
+      (stroke (width 0.1) (type solid)) (fill none) (layer "F.Fab") (uuid "{u(tag + "fab")}"))
+    (fp_line (start -1.1 -0.7) (end 1.1 -0.7)
+      (stroke (width 0.12) (type solid)) (layer "F.SilkS") (uuid "{u(tag + "silk")}"))
+    (pad "1" smd rect (at -0.75 0) (size 0.8 0.9) (layers "F.Cu" "F.Mask") (uuid "{u(tag + "p1")}"))
+    (pad "2" smd rect (at 0.75 0) (size 0.8 0.9) (layers "F.Cu" "F.Mask") (uuid "{u(tag + "p2")}"))
+  )'''
+
+
 def board(rev: int) -> str:
     items = []
 
@@ -78,6 +101,13 @@ def board(rev: int) -> str:
     add(f'(gr_rect (start 104 84) (end 108 88) '
         f'(stroke (width 0.05) (type default)) (fill yes) (layer "F.Mask") (uuid "{u("m1")}"))')
 
+    # footprints: R1 keeps its place but changes value in rev 3, C1 appears in
+    # rev 2 - together they cover "value text changed" and "part added" on the
+    # fab layer
+    add(footprint("R1", "10k" if rev < 3 else "4k7", 120, 90, "fpR1"))
+    if rev >= 2:
+        add(footprint("C1", "100n", 135, 100, "fpC1"))
+
     body = "\n".join(items)
     return f"""(kicad_pcb
   (version 20240108)
@@ -94,6 +124,8 @@ def board(rev: int) -> str:
     (38 "B.Mask" user)
     (39 "F.Mask" user)
     (44 "Edge.Cuts" user)
+    (48 "B.Fab" user)
+    (49 "F.Fab" user)
   )
   (setup (pad_to_mask_clearance 0))
   (net 0 "")

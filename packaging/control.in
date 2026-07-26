@@ -3,12 +3,13 @@ Version: @VERSION@
 Section: electronics
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.9)
+Depends: python3 (>= 3.9), git
 Recommends: kicad (>= 7)
 Maintainer: MuratovAS <muratovas@0x12.net>
 Homepage: https://github.com/0x12net/kdif
 Description: interactive HTML diff viewer for KiCad boards and schematics
  kdif generates a single self-contained interactive HTML file showing the diff
- of a KiCad board and schematic between git revisions. It drives kicad-cli (it
- is not a KiCad plugin) and reads the revisions from the project's git
- repository.
+ of a KiCad board and schematic between git revisions. It drives kicad-cli and
+ reads the revisions from the project's git repository. The same tool is also
+ installable inside KiCad through the Plugin and Content Manager, which is
+ packaged separately (see the project homepage).

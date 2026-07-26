@@ -1,6 +1,8 @@
-name: "Release"
+name: "Release - Debian"
 
-# Build the .deb and attach it to the GitHub release for the pushed tag.
+# Builds the .deb package and attaches it to the GitHub release of the pushed
+# tag. The KiCad PCM archive for the same tag is built and attached in parallel
+# by release-kicad-pcm.yml - both add assets to this one release.
 on:
   push:
     tags:
@@ -8,6 +10,7 @@ on:
 
 jobs:
   Release:
+    name: Build and publish the .deb
     runs-on: ubuntu-latest
     permissions:
       contents: write

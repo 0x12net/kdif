@@ -8,8 +8,10 @@ revisions. A single self-contained HTML file in the spirit of
 [InteractiveHtmlBom](https://github.com/openscopeproject/InteractiveHtmlBom):
 dark/light theme, a layer panel, and a canvas with pan/zoom.
 
-This is **not a KiCad plugin** — the program calls `kicad-cli` (KiCad ≥ 7) and
-takes the revisions from the project's git repository.
+The drawing is done by `kicad-cli` (KiCad ≥ 7) and the revisions come from the
+project's git repository — the working tree is never switched. Use it as a
+command-line tool, or install it into KiCad through the **Plugin and Content
+Manager** and press a toolbar button instead. Linux, macOS and Windows.
 
 ## Features
 
@@ -24,6 +26,10 @@ takes the revisions from the project's git repository.
 - **Layers**: toggle each layer on/off, All / None / Changed buttons,
   double-click a layer to solo it. Layers that differ between A and B are
   marked with a dot.
+- **Fab layers stay readable**: footprint value fields are not plotted on
+  `F.Fab`/`B.Fab` (a value next to every part, dragged along by every part that
+  moved, buries the change you are looking for). Reference designators are
+  kept, and `--show-fab-values` brings the values back.
 - **Comparison points**: any number of revisions in one file — the A/B pair is
   selected with radio buttons right inside the viewer.
 - **Title block**: the bottom of the sidebar shows title / rev / date / company
@@ -34,13 +40,34 @@ takes the revisions from the project's git repository.
 
 ## Installation
 
+### As a KiCad plugin (any OS)
+
+In KiCad: **Plugin and Content Manager → Manage... → +**, and add the
+repository URL
+
+```
+https://github.com/0x12net/kdif/releases/download/pcm-repository/repository.json
+```
+
+then pick *kdif* and **Apply Pending Changes**. A **kdif** button appears on
+the pcbnew toolbar; updates arrive through PCM like any other package. To try
+a single build without adding the repository, download `kdif_*.zip` from the
+[latest release](../../releases/latest) and use *Install from File...*.
+
+Requires KiCad ≥ 9 with *Preferences → Plugins → Enable KiCad API*, and `git`
+on the system. See [plugin/README.md](plugin/README.md) for what the panel
+does and [PCM/README.md](PCM/README.md) for how the package is built.
+
+### As a command-line tool
+
 Download the `.deb` from the [latest release](../../releases/latest) and install it:
 
 ```bash
 sudo apt install ./kdif_*.deb     # pulls in python3; recommends kicad
 ```
 
-Or install from source:
+Or install from source (works on Linux, macOS and Windows — kdif needs only
+Python ≥ 3.9, git and KiCad):
 
 ```bash
 pipx install /path/to/kdif        # or: pip install -e .
@@ -48,7 +75,8 @@ pipx install /path/to/kdif        # or: pip install -e .
 
 Or without installing: run `python3 -m kdif ...` from the project directory.
 
-You can also build the `.deb` yourself with `make deb` (needs `dpkg-deb`).
+You can also build the packages yourself: `make deb` (needs `dpkg-deb`) and
+`make pcm` / `python3 PCM/create_pcm_archive.py v1.0.0` for the KiCad package.
 
 ## Usage
 
@@ -92,9 +120,10 @@ The result is `<board_name>-diff.html`, which opens in any modern browser.
 | `--worktree`               | add the uncommitted state as a`worktree` revision                          |
 | `-l, --layers LIST`        | comma-separated layers (default: all board layers)                         |
 | `-o, --output FILE`        | output HTML file                                                           |
-| `--kicad-cli CMD`          | kicad-cli command, e.g.`'flatpak run --command=kicad-cli org.kicad.KiCad'` |
+| `--kicad-cli CMD`          | kicad-cli command or path (default: autodetected, see below)               |
 | `-j, --jobs N`             | parallel kicad-cli processes (default: 4)                                  |
 | `--check-zones`            | refill zones before exporting (KiCad ≥ 8)                                 |
+| `--show-fab-values`        | plot footprint values on the`*.Fab` layers (hidden by default)             |
 | `--no-compress`            | do not compress the SVG inside the HTML (for very old browsers)            |
 
 ### Viewer controls
@@ -103,17 +132,25 @@ drag — pan · wheel — zoom · **F** — fit the board · **1–5** — modes
 **S** — swap A and B · double-click a layer — solo · **PNG** button — save the
 current view.
 
-## flatpak KiCad
+## Finding kicad-cli
 
-By default `kicad-cli` from `$PATH` is used. If KiCad is installed as a flatpak,
-pass the command explicitly:
+kdif looks for `kicad-cli` in this order: `--kicad-cli`, `$KICAD_CLI`, `PATH`,
+the standard install location for the platform, a flatpak KiCad. Only Linux
+distributions put it on `PATH`, so on the other two the third step is what
+normally finds it:
 
 ```bash
-kdif --kicad-cli 'flatpak run --command=kicad-cli org.kicad.KiCad' .
+# Windows
+kdif --kicad-cli "C:\Program Files\KiCad\9.0\bin\kicad-cli.exe" hw\board.kicad_pro
+# macOS
+kdif --kicad-cli '/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli' hw/board.kicad_pro
+# flatpak KiCad (detected automatically, or pass it explicitly)
+kdif --kicad-cli 'flatpak run --command=kicad-cli org.kicad.KiCad' hw/board.kicad_pro
 ```
 
-The flatpak sandbox can only see the home directory, so temporary files are
-placed in `~/.cache/kdif` (override with `--workdir`).
+Temporary files go to the user cache directory (`~/.cache/kdif`,
+`~/Library/Caches/kdif`, `%LOCALAPPDATA%\kdif\cache`), which is inside `$HOME`
+because that is all the flatpak sandbox can see. Override with `--workdir`.
 
 ## Try it on a fixture
 
@@ -125,6 +162,10 @@ that exercises every diff feature — handy for a quick look or a smoke test:
 python3 tests/make_fixture.py ~/demo-board
 kdif --commits 3 ~/demo-board/demo.kicad_pro
 ```
+
+[tests/smoke.py](tests/smoke.py) runs that fixture through the whole pipeline
+with a stand-in for `kicad-cli`, so it needs no KiCad install — this is what
+CI runs on Linux, macOS and Windows on every push.
 
 ## How it works
 

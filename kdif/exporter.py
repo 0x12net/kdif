@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import re
-import shlex
 import shutil
-import subprocess
+import sys
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+
+from . import proc
 
 FLATPAK_APP = "org.kicad.KiCad"
 
@@ -85,14 +87,96 @@ class SvgResult:
     raw_size: int
 
 
-def find_kicad_cli(user_cmd: Optional[str]) -> List[str]:
-    """Return the kicad-cli command as an argv prefix."""
+def _version_key(path: Path) -> Tuple:
+    """Sort key for versioned install directories ("10.0" must beat "9.0")."""
+    return tuple(int(p) for p in re.findall(r"\d+", path.name)) or (0,)
+
+
+def _install_candidates(prefer_major: Optional[int] = None) -> List[Path]:
+    """Well-known kicad-cli locations for this platform, best first.
+
+    Only Linux distributions put kicad-cli on PATH; the Windows installer and
+    the macOS .app bundle both leave it inside the install directory, so a
+    plain `which` lookup finds nothing on the two platforms where a user is
+    most likely to run kdif through the KiCad plugin (plugin/README.md).
+
+    `prefer_major` (the major version of the KiCad that is actually running,
+    which the plugin knows over the IPC API) wins over "newest installed":
+    with several KiCad versions side by side, an older kicad-cli cannot read
+    the newer version's files at all.
+    """
+    if proc.IS_WINDOWS:
+        roots: List[Path] = []
+        for var in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+            value = os.environ.get(var)
+            if value:
+                roots.append(Path(value) / "KiCad")
+                if var == "LOCALAPPDATA":
+                    roots.append(Path(value) / "Programs" / "KiCad")
+        out: List[Path] = []
+        for root in roots:
+            try:
+                # <root>/<version>/bin/kicad-cli.exe, newest version first
+                versions = sorted(root.iterdir(), key=_version_key, reverse=True)
+            except OSError:
+                continue  # missing or unreadable: just not where KiCad is
+            if prefer_major is not None:
+                versions.sort(key=lambda p: _version_key(p)[0] != prefer_major)
+            out += [version / "bin" / "kicad-cli.exe" for version in versions]
+            out.append(root / "bin" / "kicad-cli.exe")
+        return out
+    if sys.platform == "darwin":
+        rel = Path("KiCad.app") / "Contents" / "MacOS" / "kicad-cli"
+        return [
+            Path("/Applications") / "KiCad" / rel,
+            Path.home() / "Applications" / "KiCad" / rel,
+            Path("/Applications") / rel,
+            Path.home() / "Applications" / rel,
+        ]
+    return [
+        Path("/usr/bin/kicad-cli"),
+        Path("/usr/local/bin/kicad-cli"),
+        Path.home() / ".local" / "bin" / "kicad-cli",
+        Path("/snap/bin/kicad.kicad-cli"),
+    ]
+
+
+def _flatpak_command() -> Optional[List[str]]:
+    """The flatpak invocation, if KiCad is installed as a flatpak."""
+    if proc.IS_WINDOWS or not shutil.which("flatpak"):
+        return None
+    installs = [Path("/var/lib/flatpak/app"), Path.home() / ".local/share/flatpak/app"]
+    if any((base / FLATPAK_APP).is_dir() for base in installs):
+        return ["flatpak", "run", "--command=kicad-cli", FLATPAK_APP]
+    return None
+
+
+def find_kicad_cli(user_cmd: Optional[str], prefer_major: Optional[int] = None) -> List[str]:
+    """Return the kicad-cli command as an argv prefix.
+
+    Order: explicit --kicad-cli, $KICAD_CLI, PATH, this platform's standard
+    install locations, a flatpak KiCad. See _install_candidates() for what
+    `prefer_major` does.
+    """
     if user_cmd:
-        return shlex.split(user_cmd)
-    if shutil.which("kicad-cli"):
-        return ["kicad-cli"]
+        return proc.split_command(user_cmd)
+    env_cmd = os.environ.get("KICAD_CLI")
+    if env_cmd:
+        return proc.split_command(env_cmd)
+    on_path = shutil.which("kicad-cli")
+    if on_path:
+        return [on_path]
+    for candidate in _install_candidates(prefer_major):
+        if candidate.is_file():
+            return [str(candidate)]
+    flatpak = _flatpak_command()
+    if flatpak:
+        return flatpak
     raise ExportError(
-        "kicad-cli not found in PATH. Install KiCad (>= 7) or pass --kicad-cli, e.g.\n"
+        "kicad-cli not found. Install KiCad (>= 7), or point kdif at it with "
+        "--kicad-cli / the $KICAD_CLI environment variable, e.g.\n"
+        r"  --kicad-cli 'C:\Program Files\KiCad\9.0\bin\kicad-cli.exe'" "\n"
+        "  --kicad-cli '/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli'\n"
         f"  --kicad-cli 'flatpak run --command=kicad-cli {FLATPAK_APP}'"
     )
 
@@ -100,8 +184,8 @@ def find_kicad_cli(user_cmd: Optional[str]) -> List[str]:
 def kicad_cli_version(cmd: Sequence[str]) -> Tuple[int, str]:
     """Return (major, full_version_string). Falls back to (0, '') on failure."""
     try:
-        proc = subprocess.run([*cmd, "version"], capture_output=True, text=True, timeout=120)
-        ver = proc.stdout.strip().splitlines()[-1].strip() if proc.stdout.strip() else ""
+        result = proc.run([*cmd, "version"], timeout=120)
+        ver = result.stdout.strip().splitlines()[-1].strip() if result.stdout.strip() else ""
         m = re.match(r"(\d+)\.", ver)
         return (int(m.group(1)) if m else 0, ver)
     except Exception:
@@ -116,7 +200,7 @@ def is_flatpak_cmd(cmd: Sequence[str]) -> bool:
 
 def parse_board_layers(board_path: Path) -> List[Layer]:
     """Parse the (layers ...) block of a .kicad_pcb file."""
-    text = board_path.read_text(errors="replace")
+    text = proc.read_text(board_path)
     idx = text.find("(layers")
     if idx < 0:
         raise ExportError(f"no (layers ...) block found in {board_path.name}")
@@ -141,6 +225,72 @@ def parse_board_layers(board_path: Path) -> List[Layer]:
     if not layers:
         raise ExportError(f"could not parse layers from {board_path.name}")
     return layers
+
+
+# Footprint value fields, both the modern property form and KiCad 6/7's
+# fp_text. Reference designators are left alone on purpose - they are what
+# identifies the footprint that moved.
+_RE_VALUE_FIELD = re.compile(r'\(\s*(?:property\s+"Value"|fp_text\s+value\b)')
+_RE_FAB_LAYER = re.compile(r'\(\s*layer\s+"[^"]*\.Fab"\s*\)')
+_RE_HIDE_NO = re.compile(r"\(\s*hide\s+no\s*\)")
+_RE_HIDE_TOKEN = re.compile(r"(?<![-\w])hide(?![-\w])")
+_RE_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
+def _blank_strings(block: str) -> str:
+    """Same text with quoted contents blanked out, offsets preserved.
+
+    Lets the token searches below ignore anything that merely *looks* like a
+    keyword inside a footprint's value string ("hide", "layer", ...).
+    """
+    return _RE_QUOTED.sub(lambda m: '"' + " " * (len(m.group(0)) - 2) + '"', block)
+
+
+def hide_fab_values(board_path: Path) -> int:
+    """Mark footprint Value fields that live on a *.Fab layer as hidden.
+
+    kicad-cli has no option for this (unlike the DNP and sketch-pad ones), so
+    it is done in the board file itself - always a temporary copy extracted
+    from git into the work directory, never the user's own file.
+
+    Why hide them at all: every footprint puts its value on F.Fab/B.Fab, so a
+    fab-layer diff is dominated by a value next to every part, and any footprint
+    that moved drags its value text along - a lot of red and green over what is
+    usually a single geometric change. Returns the number of fields hidden.
+    """
+    text = proc.read_text(board_path)
+    pieces: List[str] = []
+    pos = 0
+    hidden = 0
+    for match in _RE_VALUE_FIELD.finditer(text):
+        if match.start() < pos:
+            continue
+        block = _sexp_block(text, match.start())
+        # Blanked only for the keyword searches below - the layer has to be
+        # matched on the real text, since its name lives inside the quotes.
+        # Blanking preserves length, so offsets are interchangeable.
+        bare = _blank_strings(block)
+        layer = _RE_FAB_LAYER.search(block)
+        if layer is None:
+            continue  # a value on silkscreen is meant to be seen
+        hide_no = _RE_HIDE_NO.search(bare)
+        if hide_no is not None:
+            new_block = block[:hide_no.start()] + "(hide yes)" + block[hide_no.end():]
+        elif _RE_HIDE_TOKEN.search(bare) is not None:
+            continue  # already hidden, in either file format
+        else:
+            # Right after the layer, which is where KiCad 6/7's parser expects
+            # the bare `hide` token; the modern (hide yes) is position-free.
+            keyword = " hide" if block.lstrip("( \t\n\r").startswith("fp_text") else " (hide yes)"
+            new_block = block[:layer.end()] + keyword + block[layer.end():]
+        pieces.append(text[pos:match.start()])
+        pieces.append(new_block)
+        pos = match.start() + len(block)
+        hidden += 1
+    if hidden:
+        pieces.append(text[pos:])
+        proc.write_text(board_path, "".join(pieces))
+    return hidden
 
 
 def _inner_cu_key(name: str) -> Optional[int]:
@@ -268,7 +418,7 @@ def parse_sheet_tree(root_sch: Path) -> List[Sheet]:
             svg_name=root_stem + "".join("-" + n for n in names) + ".svg",
         ))
         try:
-            text = file.read_text(errors="replace")
+            text = proc.read_text(file)
         except OSError:
             return  # sheet file absent in this revision: page will be missing
         for m in _RE_SHEET_OPEN.finditer(text):
@@ -301,7 +451,7 @@ def parse_title_block(path: Path) -> Dict[str, object]:
     Returns a dict with any of title/date/rev/company and a "comments" list;
     empty when the file has no title block (or is absent in this revision)."""
     try:
-        text = path.read_text(errors="replace")
+        text = proc.read_text(path)
     except OSError:
         return {}
     idx = text.find("(title_block")
@@ -432,7 +582,7 @@ class KicadExporter:
         return argv
 
     def process_svg(self, svg_path: Path) -> SvgResult:
-        text = svg_path.read_text(errors="replace")
+        text = proc.read_text(svg_path)
         cleaned, vb, mm_per_unit = clean_svg(text)
         raw = cleaned.encode()
         sha = hashlib.sha1(raw).hexdigest()[:12]
@@ -451,9 +601,9 @@ class KicadExporter:
 
     def export_layer(self, board: Path, layer: str, out_svg: Path) -> SvgResult:
         argv = self._build_argv(board, layer, out_svg)
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
-        if proc.returncode != 0 or not out_svg.is_file():
-            err = (proc.stderr or proc.stdout or "").strip()
+        result = proc.run(argv, timeout=600)
+        if result.returncode != 0 or not out_svg.is_file():
+            err = (result.stderr or result.stdout or "").strip()
             raise ExportError(
                 f"kicad-cli failed for layer {layer} of {board.name}:\n{err}"
             )
@@ -485,9 +635,9 @@ class KicadExporter:
                 "--no-background-color",
                 "--output", str(out_dir),
                 str(root_sch)]
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
-        if proc.returncode != 0 or not any(out_dir.glob("*.svg")):
-            err = (proc.stderr or proc.stdout or "").strip()
+        result = proc.run(argv, timeout=600)
+        if result.returncode != 0 or not any(out_dir.glob("*.svg")):
+            err = (result.stderr or result.stdout or "").strip()
             raise ExportError(f"kicad-cli failed for schematic {root_sch.name}:\n{err}")
 
     def export_schematics(self, jobs: List[Tuple[Optional[Path], Path]], workers: int,

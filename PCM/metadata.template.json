@@ -1,0 +1,35 @@
+{
+    "$schema": "https://go.kicad.org/pcm/schemas/v1",
+    "name": "kdif",
+    "description": "Interactive HTML diff of a KiCad board and schematic between git revisions",
+    "description_full": "kdif turns the git history of a KiCad project into a single self-contained interactive HTML file: the board layers and every schematic sheet of two revisions drawn on top of each other (red = only in A, green = only in B, yellow = unchanged), plus a crossfade slider, A/B views and a split view. Layers and sheets that actually changed are marked, so a review starts from what moved rather than from a wall of geometry.\n\nThe toolbar button opens a panel that already knows the project you have open: tick the commits to compare (short hash, date, subject and tag of every commit that touched the board or the schematic) and the layers to include - the two most recent commits and all layers are ticked for you - press Generate, and open the result when you want to look at it. The generated file has no external dependencies: attach it to a release or send it to a colleague.\n\nUnder the hood it drives kicad-cli and reads revisions straight out of the project's git repository (the working tree is never switched). git has to be installed; the same tool also works as a standalone command-line program - see the project homepage.",
+    "identifier": "com.github.0x12net.kdif",
+    "type": "plugin",
+    "author": {
+        "name": "MuratovAS",
+        "contact": {
+            "github": "https://github.com/0x12net"
+        }
+    },
+    "license": "MIT",
+    "resources": {
+        "homepage": "https://github.com/0x12net/kdif"
+    },
+    "versions": [
+        {
+            "version": "VERSION_HERE",
+            "status": "development",
+            "kicad_version": "9.0",
+            "runtime": "ipc",
+            "platforms": [
+                "linux",
+                "macos",
+                "windows"
+            ],
+            "download_sha256": "SHA256_HERE",
+            "download_size": "DOWNLOAD_SIZE_HERE",
+            "download_url": "DOWNLOAD_URL_HERE",
+            "install_size": "INSTALL_SIZE_HERE"
+        }
+    ]
+}

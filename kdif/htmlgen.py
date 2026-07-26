@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import List, Optional
 
+from . import proc
 from .exporter import Layer, Sheet, SvgResult
 from .gitrepo import Rev
 
@@ -67,7 +68,7 @@ def build_html(title: str, board_rel: str, repo_name: str,
             "titleBlocks": sch_title_blocks or [],
         }
     payload = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
-    template = TEMPLATE.read_text()
+    template = proc.read_text(TEMPLATE)
     marker = "\"__KHD_DATA__\""
     if marker not in template:
         raise RuntimeError("template marker not found")

@@ -1,0 +1,8 @@
+# kdif itself is stdlib-only (the kdif/ package travels inside the PCM
+# archive next to panel.py - see PCM/create_pcm_archive.py).
+#
+# kicad-python is used for one optional thing: asking the running KiCad which
+# project is open, so the panel opens pre-filled. panel.py falls back to a
+# file picker if the import or the IPC call fails, so a failed install here
+# degrades the UI rather than breaking the plugin.
+kicad-python>=0.7.1,<0.8

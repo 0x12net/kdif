@@ -1,0 +1,31 @@
+{
+    "$schema": "https://go.kicad.org/api/schemas/v1",
+    "identifier": "com.github.0x12net.kdif",
+    "name": "kdif",
+    "description": "Generate an interactive single-file HTML diff of this KiCad project between git revisions: board layers and schematic sheets overlaid (red = only in A, green = only in B, yellow = unchanged), with a crossfade slider and split view. Runs kicad-cli under the hood and reads the revisions from the project's git repository.",
+    "runtime": {
+        "type": "python",
+        "min_version": "3.9"
+    },
+    "actions": [
+        {
+            "identifier": "generate-diff",
+            "name": "kdif",
+            "description": "Diff this project between git revisions as an interactive HTML file",
+            "show-button": true,
+            "scopes": [
+                "pcb",
+                "schematic"
+            ],
+            "entrypoint": "panel.py",
+            "icons-light": [
+                "icons/kdif_24.png",
+                "icons/kdif_48.png"
+            ],
+            "icons-dark": [
+                "icons/kdif_24.png",
+                "icons/kdif_48.png"
+            ]
+        }
+    ]
+}

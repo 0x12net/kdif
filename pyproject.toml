@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kdif"
 version = "0.1.0"
-description = "Generate an interactive HTML diff viewer for KiCad PCBs and schematics from git history (uses kicad-cli, not a KiCad plugin)"
+description = "Generate an interactive HTML diff viewer for KiCad PCBs and schematics from git history (drives kicad-cli; also ships as a KiCad PCM plugin)"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
