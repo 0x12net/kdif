@@ -18,6 +18,24 @@ class GitError(RuntimeError):
     pass
 
 
+class GitMissing(GitError):
+    """git itself is not installed, as opposed to a git command failing.
+
+    A class of its own because every other GitError says something about *this*
+    repository: without it the callers that turn a failure into a message for
+    the user (cli.py, the KiCad panel) report a missing git as "not inside a
+    git repository", which sends people looking in entirely the wrong place.
+    """
+
+
+GIT_MISSING_MSG = (
+    "git not found - install it and make sure it is on PATH.\n"
+    "  Windows: https://git-scm.com/download/win\n"
+    "  macOS:   xcode-select --install\n"
+    "  Linux:   your package manager, e.g. 'apt install git' or 'pacman -S git'"
+)
+
+
 @dataclass
 class Rev:
     """One point of comparison."""
@@ -32,7 +50,12 @@ class Rev:
 
 
 def _git(repo: Path, *args: str, binary: bool = False):
-    result = proc.run(["git", "-C", str(repo), *args], binary=binary)
+    try:
+        result = proc.run(["git", "-C", str(repo), *args], binary=binary)
+    except FileNotFoundError:
+        # Nothing is passed as cwd, so the only file subprocess can fail to
+        # find here is the git executable itself.
+        raise GitMissing(GIT_MISSING_MSG) from None
     if result.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
     return result.stdout
@@ -42,7 +65,9 @@ def repo_root(path: Path) -> Path:
     """Root of the git repository containing `path` (a directory)."""
     try:
         out = _git(path, "rev-parse", "--show-toplevel")
-    except (GitError, FileNotFoundError):
+    except GitMissing:
+        raise  # no git at all: keep that message, it is not about `path`
+    except GitError:
         raise GitError(f"'{path}' is not inside a git repository") from None
     return Path(out.strip()).resolve()
 

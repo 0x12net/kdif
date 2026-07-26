@@ -284,7 +284,15 @@ class DiffFrame(wx.Frame):
         try:
             self._load_commits(project)
         except GitError as e:
-            self._set_status(str(e).splitlines()[0])
+            # An empty picker says nothing about why it is empty, so the reason
+            # goes where the commits would have been (as the layer box already
+            # does); the full text - a missing git carries install hints over
+            # several lines - goes to the log.
+            self._feed_log(str(e) + "\n")
+            lines = str(e).splitlines()
+            self.commit_list.Set([f"({lines[0]})"])
+            self.commit_list.Disable()
+            self._set_status(lines[0] + (" - see the log" if len(lines) > 1 else ""))
             return
 
         self.run_btn.Enable()
