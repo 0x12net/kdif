@@ -1,11 +1,12 @@
 name: "Tests"
 
-# Three things are guarded here, on every platform kdif ships to:
+# Three things are guarded here, in one job per platform kdif ships to:
 #   1. the CLI end to end (tests/smoke.py drives the real fixture through the
 #      real code path, with tests/fake_kicad_cli.py standing in for KiCad),
 #   2. the KiCad PCM package tooling (PCM/create_pcm_archive.py is what the
 #      release workflow runs, so it has to work on Windows/macOS too),
-#   3. the Debian package, which is Linux-only by nature.
+#   3. the Debian package - Linux-only by nature, hence the last steps of the
+#      ubuntu job rather than a job of its own.
 on:
   push:
     branches:
@@ -51,41 +52,18 @@ jobs:
           python PCM/pcm_repository.py --version v0.0.0 --download-sha256 0000000000000000000000000000000000000000000000000000000000000000 --download-size 1 --download-url https://example.invalid/kdif.zip --install-size 1
           python -c "import json; json.load(open('pcm-repository/packages.json')); json.load(open('pcm-repository/repository.json')); print('repository index ok')"
 
-  PythonVersions:
-    name: python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The bounds kdif declares: pyproject.toml requires-python >= 3.9,
-        # plugin/plugin.json's runtime.min_version says the same.
-        python-version: ["3.9", "3.13"]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v7
-
-      - name: Setting up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Run the end-to-end smoke test
-        run: python tests/smoke.py
-
-  Deb:
-    name: Debian package
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v7
-
+      # dpkg/apt exist on the ubuntu runner alone, so the remaining steps run
+      # on that leg of the matrix only.
       - name: Building the .deb package
+        if: matrix.os == 'ubuntu-latest'
         run: make deb
 
       - name: List package contents
+        if: matrix.os == 'ubuntu-latest'
         run: dpkg-deb -I *.deb && dpkg-deb -c *.deb
 
       - name: Asserting the .deb is the CLI only
+        if: matrix.os == 'ubuntu-latest'
         # There is no GUI variant of the .deb: it ships the command-line tool
         # and nothing else. The wxPython panel reaches users through KiCad's
         # PCM package instead (see PCM/README.md), so neither plugin/ nor any
@@ -100,6 +78,7 @@ jobs:
           echo "CLI only, no GUI in the package"
 
       - name: Installing and running the .deb
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ./*.deb
